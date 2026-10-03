@@ -1,0 +1,23 @@
+{
+  "name": "@ccr/ai",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "description": "Provider-agnostic clinical AI layer: context building, retrieval, prompts, memory and providers",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.129.0",
+    "@ccr/types": "*",
+    "openai": "^7.25.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@ccr/config": "*"
+  }
+}

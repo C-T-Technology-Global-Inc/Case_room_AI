@@ -1,0 +1,12 @@
+{
+  "name": "@ccr/config",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "description": "Shared TypeScript configuration",
+  "files": [
+    "tsconfig.base.json",
+    "tsconfig.nextjs.json",
+    "tsconfig.library.json"
+  ]
+}

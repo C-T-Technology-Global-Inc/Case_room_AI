@@ -1,0 +1,591 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Clinical Case Room: data model
+//
+// The unit of collaboration is the patient case (CaseRoom), not a chat thread.
+// Every clinically meaningful artefact (documents, timeline, discussion,
+// decisions, approvals, tasks, AI briefs, shared memory) hangs off a CaseRoom.
+//
+// All patient data in this project is synthetic.
+// ─────────────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────────── Enums ─────────────────────────────
+
+enum UserRole {
+  ORG_ADMIN
+  DOCTOR
+  SPECIALIST
+  NURSE
+  CARE_COORDINATOR
+}
+
+enum PatientSex {
+  MALE
+  FEMALE
+  OTHER
+  UNKNOWN
+}
+
+enum PatientStatus {
+  ACTIVE
+  IN_TREATMENT
+  SURVEILLANCE
+  DISCHARGED
+}
+
+enum CaseSpecialty {
+  ONCOLOGY
+  CARDIOLOGY
+  CRITICAL_CARE
+  EMERGENCY
+  GENERAL
+}
+
+enum CaseStatus {
+  OPEN
+  REVIEWING
+  DECISION_PENDING
+  CLOSED
+}
+
+enum DocumentType {
+  CLINICAL_NOTE
+  LAB_RESULT
+  IMAGING_REPORT
+  PATHOLOGY_REPORT
+  DISCHARGE_SUMMARY
+  OTHER
+}
+
+enum ProcessingStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum TimelineEventType {
+  IMAGING
+  LAB
+  PROCEDURE
+  PATHOLOGY
+  CONSULTATION
+  ADMISSION
+  TREATMENT
+  DECISION
+  NOTE
+  DISCHARGE
+  OTHER
+}
+
+enum MessageType {
+  USER
+  AI
+  SYSTEM
+}
+
+enum DecisionStatus {
+  PROPOSED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+}
+
+/// PENDING is an extension of the spec: a requested reviewer who has not responded yet.
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  NEEDS_CHANGES
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum BriefType {
+  CASE_SUMMARY
+  TUMOR_BOARD
+  HANDOFF
+}
+
+/// DRAFT = AI generated and/or edited, not yet signed off.
+/// APPROVED = reviewed and approved by a qualified human; the only "final" state.
+enum BriefStatus {
+  DRAFT
+  APPROVED
+}
+
+enum ActorType {
+  USER
+  AI
+  SYSTEM
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+}
+
+// ───────────────────────────── Organization & people ─────────────────────────────
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+
+  users       User[]
+  patients    Patient[]
+  caseRooms   CaseRoom[]
+  auditEvents AuditEvent[]
+  invitations Invitation[]
+  aiRuns      AIRun[]
+}
+
+/// A person's sign-in account. One identity can be a member of several
+/// organizations; each membership is a `User` row in that organization.
+model Identity {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  users User[]
+}
+
+/// A member of one organization: the person's profile and role there.
+/// Everything inside an organization (cases, messages, approvals, audit)
+/// references this row, so data never crosses organizations.
+model User {
+  id             String    @id @default(cuid())
+  identityId     String
+  name           String
+  /// Copy of Identity.email, unique within the organization.
+  email          String
+  /// Mention handle used in discussions, e.g. "DrSmith". Unique per organization.
+  handle         String
+  avatar         String?
+  role           UserRole
+  /// Clinical specialty, e.g. "Medical Oncology", "Radiology", "Pathology".
+  specialty      String?
+  /// Job title shown in the UI, e.g. "Surgical Oncologist".
+  title          String?
+  organizationId String
+  createdAt      DateTime  @default(now())
+  /// Last sign-in or switch into this organization.
+  lastLoginAt    DateTime?
+
+  identity     Identity     @relation(fields: [identityId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  caseMemberships   CaseRoomMember[] @relation("CaseMember")
+  addedCaseMembers  CaseRoomMember[] @relation("CaseMemberAddedBy")
+  createdCaseRooms  CaseRoom[]       @relation("CaseRoomCreatedBy")
+  uploadedDocuments ClinicalDocument[]
+  timelineEvents    TimelineEvent[]
+  messages          Message[]
+  reactions         MessageReaction[]
+  decisions         Decision[]
+  approvals         Approval[]
+  assignedTasks     Task[]           @relation("TaskAssignee")
+  createdTasks      Task[]           @relation("TaskCreator")
+  requestedBriefs   CaseBrief[]      @relation("BriefRequestedBy")
+  editedBriefs      CaseBrief[]      @relation("BriefEditedBy")
+  approvedBriefs    CaseBrief[]      @relation("BriefApprovedBy")
+  auditEvents       AuditEvent[]
+  sentInvitations   Invitation[]
+
+  @@unique([organizationId, handle])
+  @@unique([organizationId, email])
+  @@unique([identityId, organizationId])
+  @@index([organizationId])
+}
+
+model Invitation {
+  id             String           @id @default(cuid())
+  organizationId String
+  email          String
+  role           UserRole
+  specialty      String?
+  title          String?
+  token          String           @unique
+  status         InvitationStatus @default(PENDING)
+  invitedById    String
+  createdAt      DateTime         @default(now())
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy    User         @relation(fields: [invitedById], references: [id])
+
+  @@index([organizationId, status])
+}
+
+// ───────────────────────────── Patient & case room ─────────────────────────────
+
+model Patient {
+  id                           String        @id @default(cuid())
+  syntheticMedicalRecordNumber String        @unique
+  firstName                    String
+  lastName                     String
+  dateOfBirth                  DateTime      @db.Date
+  sex                          PatientSex
+  primaryDiagnosis             String
+  status                       PatientStatus @default(ACTIVE)
+  /// Always true in this project. Real patient data must never be stored here.
+  isSynthetic                  Boolean       @default(true)
+  organizationId               String
+  createdAt                    DateTime      @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  caseRooms    CaseRoom[]
+
+  @@index([organizationId])
+}
+
+model CaseRoom {
+  id             String        @id @default(cuid())
+  patientId      String
+  /// Denormalised from Patient for fast tenant scoping.
+  organizationId String
+  title          String
+  specialty      CaseSpecialty
+  status         CaseStatus    @default(OPEN)
+  createdById    String
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation("CaseRoomCreatedBy", fields: [createdById], references: [id])
+
+  members     CaseRoomMember[]
+  documents   ClinicalDocument[]
+  timeline    TimelineEvent[]
+  messages    Message[]
+  decisions   Decision[]
+  tasks       Task[]
+  briefs      CaseBrief[]
+  memory      CaseMemory?
+  auditEvents AuditEvent[]
+
+  @@index([organizationId, status])
+  @@index([patientId])
+}
+
+/// The care team of a case room. Access to case data is limited to members
+/// (and organization admins).
+model CaseRoomMember {
+  id         String   @id @default(cuid())
+  caseRoomId String
+  userId     String
+  addedById  String?
+  joinedAt   DateTime @default(now())
+
+  caseRoom CaseRoom @relation(fields: [caseRoomId], references: [id], onDelete: Cascade)
+  user     User     @relation("CaseMember", fields: [userId], references: [id], onDelete: Cascade)
+  addedBy  User?    @relation("CaseMemberAddedBy", fields: [addedById], references: [id])
+
+  @@unique([caseRoomId, userId])
+  @@index([userId])
+}
+
+// ───────────────────────────── Clinical records ─────────────────────────────
+
+model ClinicalDocument {
+  id               String           @id @default(cuid())
+  caseRoomId       String
+  type             DocumentType
+  title            String
+  /// Extracted plain text. Imaging is represented only as textual reports.
+  rawText          String           @db.Text
+  uploadedById     String
+  documentDate     DateTime         @db.Date
+  createdAt        DateTime         @default(now())
+  /// Original file in object storage (optional; pasted text has no file).
+  fileKey          String?
+  fileName         String?
+  mimeType         String?
+  fileSize         Int?
+  /// Status of AI post-processing (timeline extraction + memory update).
+  processingStatus ProcessingStatus @default(PENDING)
+  processingError  String?
+  processedAt      DateTime?
+
+  caseRoom       CaseRoom         @relation(fields: [caseRoomId], references: [id], onDelete: Cascade)
+  uploadedBy     User             @relation(fields: [uploadedById], references: [id])
+  timelineEvents TimelineEvent[]
+  decisionLinks  DecisionSource[]
+
+  @@index([caseRoomId, documentDate])
+}
+
+model TimelineEvent {
+  id               String            @id @default(cuid())
+  caseRoomId       String
+  date             DateTime          @db.Date
+  eventType        TimelineEventType
+  title            String
+  description      String            @db.Text
+  sourceDocumentId String?
+  createdByAI      Boolean           @default(false)
+  /// Human author for manually added events.
+  createdById      String?
+  createdAt        DateTime          @default(now())
+
+  caseRoom       CaseRoom          @relation(fields: [caseRoomId], references: [id], onDelete: Cascade)
+  sourceDocument ClinicalDocument? @relation(fields: [sourceDocumentId], references: [id], onDelete: SetNull)
+  createdBy      User?             @relation(fields: [createdById], references: [id])
+
+  @@index([caseRoomId, date])
+}
+
+// ───────────────────────────── Discussion ─────────────────────────────
+
+model Message {
+  id         String      @id @default(cuid())
+  caseRoomId String
+  /// Null for AI and SYSTEM messages.
+  authorId   String?
+  content    String      @db.Text
+  type       MessageType @default(USER)
+  /// Mentions, AI sources / confidence / limitations, system event payloads.
+  metadata   Json?
+  createdAt  DateTime    @default(now())
+
+  caseRoom  CaseRoom          @relation(fields: [caseRoomId], references: [id], onDelete: Cascade)
+  author    User?             @relation(fields: [authorId], references: [id])
+  reactions MessageReaction[]
+  tasks     Task[]
+  decisions Decision[]
+
+  @@index([caseRoomId, createdAt])
+}
+
+model MessageReaction {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+}
+
+// ───────────────────────────── Decisions & approvals ─────────────────────────────
+
+model Decision {
+  id              String         @id @default(cuid())
+  /// Human-friendly number, sequential within the case room ("Decision #2").
+  number          Int
+  caseRoomId      String
+  title           String
+  description     String         @db.Text
+  rationale       String         @db.Text
+  status          DecisionStatus @default(PROPOSED)
+  /// Incremented on every content revision. Reviews must name the revision they read.
+  revision        Int            @default(1)
+  createdById     String
+  /// Discussion message this decision was created from (optional).
+  sourceMessageId String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  /// Set only when every requested human reviewer has approved.
+  finalizedAt     DateTime?
+
+  caseRoom      CaseRoom         @relation(fields: [caseRoomId], references: [id], onDelete: Cascade)
+  createdBy     User             @relation(fields: [createdById], references: [id])
+  sourceMessage Message?         @relation(fields: [sourceMessageId], references: [id], onDelete: SetNull)
+  sources       DecisionSource[]
+  approvals     Approval[]
+  tasks         Task[]
+
+  @@unique([caseRoomId, number])
+  @@index([caseRoomId, status])
+}
+
+model DecisionSource {
+  id         String @id @default(cuid())
+  decisionId String
+  documentId String
+
+  decision Decision         @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  document ClinicalDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([decisionId, documentId])
+}
+
+model Approval {
+  id          String         @id @default(cuid())
+  decisionId  String
+  userId      String
+  status      ApprovalStatus @default(PENDING)
+  comment     String?        @db.Text
+  createdAt   DateTime       @default(now())
+  respondedAt DateTime?
+
+  decision Decision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id])
+
+  @@unique([decisionId, userId])
+  @@index([userId, status])
+}
+
+// ───────────────────────────── Tasks ─────────────────────────────
+
+model Task {
+  id              String       @id @default(cuid())
+  caseRoomId      String
+  title           String
+  description     String?      @db.Text
+  assignedToId    String?
+  createdById     String
+  status          TaskStatus   @default(TODO)
+  priority        TaskPriority @default(MEDIUM)
+  dueDate         DateTime?    @db.Date
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  completedAt     DateTime?
+  /// Suggested by AI and confirmed by the human creator.
+  createdByAI     Boolean      @default(false)
+  decisionId      String?
+  sourceMessageId String?
+
+  caseRoom      CaseRoom  @relation(fields: [caseRoomId], references: [id], onDelete: Cascade)
+  assignedTo    User?     @relation("TaskAssignee", fields: [assignedToId], references: [id])
+  createdBy     User      @relation("TaskCreator", fields: [createdById], references: [id])
+  decision      Decision? @relation(fields: [decisionId], references: [id], onDelete: SetNull)
+  sourceMessage Message?  @relation(fields: [sourceMessageId], references: [id], onDelete: SetNull)
+
+  @@index([caseRoomId, status])
+  @@index([assignedToId, status])
+}
+
+// ───────────────────────────── AI artefacts ─────────────────────────────
+
+/// AI-generated, human-editable documents: case summary, tumor board brief,
+/// handoff. Nothing here is final until status = APPROVED by a human.
+model CaseBrief {
+  id            String      @id @default(cuid())
+  caseRoomId    String
+  type          BriefType
+  status        BriefStatus @default(DRAFT)
+  title         String
+  /// Structured sections (see @ccr/types BriefContent).
+  content       Json
+  /// Incremented on every edit. Approval must name the version the approver read.
+  version       Int         @default(1)
+  generatedByAI Boolean     @default(true)
+  aiProvider    String?
+  aiModel       String?
+  requestedById String?
+  editedById    String?
+  editedAt      DateTime?
+  approvedById  String?
+  approvedAt    DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  caseRoom    CaseRoom @relation(fields: [caseRoomId], references: [id], onDelete: Cascade)
+  requestedBy User?    @relation("BriefRequestedBy", fields: [requestedById], references: [id])
+  editedBy    User?    @relation("BriefEditedBy", fields: [editedById], references: [id])
+  approvedBy  User?    @relation("BriefApprovedBy", fields: [approvedById], references: [id])
+
+  @@index([caseRoomId, type, createdAt])
+}
+
+/// Shared patient memory: a structured, database-driven snapshot of what the
+/// team knows. Updated whenever a clinical document is processed.
+model CaseMemory {
+  id         String   @id @default(cuid())
+  caseRoomId String   @unique
+  /// See @ccr/types CaseMemory.
+  data       Json
+  version    Int      @default(1)
+  updatedAt  DateTime @updatedAt
+
+  caseRoom CaseRoom @relation(fields: [caseRoomId], references: [id], onDelete: Cascade)
+}
+
+// ───────────────────────────── Audit ─────────────────────────────
+
+/// Append-only. UPDATE and DELETE are blocked by a database trigger
+/// (see migration `audit_immutability`).
+model AuditEvent {
+  id             String    @id @default(cuid())
+  organizationId String
+  caseRoomId     String?
+  /// Acting human, or the human on whose behalf the AI/system acted.
+  userId         String?
+  actorType      ActorType @default(USER)
+  action         String
+  resourceType   String
+  resourceId     String?
+  metadata       Json?
+  createdAt      DateTime  @default(now())
+
+  // Restrict: audit history must never be removed as a side effect of deleting
+  // other records. (Row UPDATE/DELETE is additionally blocked by a trigger.)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  caseRoom     CaseRoom?    @relation(fields: [caseRoomId], references: [id], onDelete: Restrict)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, createdAt])
+  @@index([caseRoomId, createdAt])
+}
+
+enum AIRunStatus {
+  /// Quota reserved; the model call is about to run or running.
+  RESERVED
+  SUCCEEDED
+  /// The model was (or may have been) called and the job failed; still counts.
+  FAILED
+  /// Reserved but never dispatched (e.g. the upload was rejected); does not count.
+  RELEASED
+}
+
+/// One AI job run with the deployment's provider key. Reserved before any
+/// model call, so quotas count every paid attempt, including failures.
+model AIRun {
+  id             String      @id @default(cuid())
+  organizationId String
+  /// Member who triggered the job.
+  userId         String?
+  identityId     String?
+  /// e.g. "case_question", "document", "case_summary".
+  task           String
+  /// Model calls this job may make (a document makes two).
+  units          Int         @default(1)
+  status         AIRunStatus @default(RESERVED)
+  provider       String?
+  error          String?
+  createdAt      DateTime    @default(now())
+  finishedAt     DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([createdAt])
+}

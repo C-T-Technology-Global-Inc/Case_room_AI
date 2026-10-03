@@ -1,0 +1,47 @@
+name: Bug report
+description: Something does not work as expected.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **Security vulnerabilities must not be reported here**: use the repository's Security tab ("Report a vulnerability"), see SECURITY.md.
+  - type: checkboxes
+    id: data
+    attributes:
+      label: Patient data
+      options:
+        - label: This report, its logs and screenshots contain no real patient data (synthetic data only).
+          required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Sign in as nguyen@riverside.demo
+        2. Open the John Carter case
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Commit or version
+      placeholder: e.g. main at abc1234
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Browser, OS, Node.js and PostgreSQL versions, AI provider (demo, Anthropic, OpenAI).
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Remove secrets (API keys, AUTH_SECRET, database URLs) before pasting.

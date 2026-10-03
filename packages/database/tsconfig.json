@@ -1,0 +1,4 @@
+{
+  "extends": "@ccr/config/tsconfig.library.json",
+  "include": ["src/**/*.ts", "prisma/**/*.ts", "prisma.config.ts"]
+}

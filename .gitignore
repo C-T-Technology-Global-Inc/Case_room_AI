@@ -1,0 +1,28 @@
+# dependencies
+node_modules/
+
+# next.js
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# prisma generated client
+packages/database/src/generated/
+
+# local file storage for uploaded documents
+.storage/
+
+# env
+.env
+.env.local
+.env.*.local
+
+# private review notes (security findings and attack scenarios): local only
+CODEX_*.md
+
+# misc
+.DS_Store
+*.log
+coverage/
+.vercel

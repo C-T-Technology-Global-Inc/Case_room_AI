@@ -1,0 +1,36 @@
+{
+  "name": "clinical-case-room",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "description": "Clinical Case Room: multiplayer AI workspace for clinical teams (MVP)",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @ccr/web",
+    "build": "npm run build -w @ccr/web",
+    "start": "npm run start -w @ccr/web",
+    "lint": "npm run lint -w @ccr/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integration": "vitest run --config vitest.integration.config.mts",
+    "db:generate": "npm run db:generate -w @ccr/database",
+    "db:migrate": "npm run db:migrate -w @ccr/database",
+    "db:deploy": "npm run db:deploy -w @ccr/database",
+    "db:seed": "npm run db:seed -w @ccr/database",
+    "db:reset": "npm run db:reset -w @ccr/database",
+    "db:studio": "npm run db:studio -w @ccr/database",
+    "setup": "npm run db:generate && npm run db:deploy && npm run db:seed"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "5.9.3",
+    "vitest": "^4.1.11"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  }
+}

@@ -1,0 +1,27 @@
+name: Feature request
+description: Suggest an improvement or a new capability.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Who needs this (role, e.g. surgeon, nurse, coordinator) and what is hard today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should the app do? Mockups welcome (synthetic data only).
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: Clinical safety
+      description: Does this change what the AI may do, or how decisions, briefs and handoffs are approved? The AI must never diagnose, prescribe or finalize a decision.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

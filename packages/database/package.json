@@ -1,0 +1,35 @@
+{
+  "name": "@ccr/database",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "description": "Prisma schema, client and synthetic seed data for Clinical Case Room",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:seed": "tsx prisma/seed/index.ts",
+    "db:reset": "prisma migrate reset --force && npm run db:seed",
+    "db:studio": "prisma studio",
+    "postinstall": "prisma generate",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@ccr/types": "*",
+    "@prisma/adapter-pg": "7.10.0",
+    "@prisma/client": "7.10.0",
+    "dotenv": "^17.2.3",
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "@ccr/ai": "*",
+    "@ccr/config": "*",
+    "@types/pg": "^8.23.1",
+    "prisma": "7.10.0",
+    "tsx": "^4.23.15"
+  }
+}
