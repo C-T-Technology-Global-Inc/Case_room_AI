@@ -22,7 +22,7 @@
     "@ccr/types": "*",
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
-    "dotenv": "^17.2.3",
+    "dotenv": "^18.0.4",
     "pg": "^8.23.0"
   },
   "devDependencies": {
