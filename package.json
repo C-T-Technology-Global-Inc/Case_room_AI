@@ -13,10 +13,11 @@
     "build": "npm run build -w @ccr/web",
     "start": "npm run start -w @ccr/web",
     "lint": "npm run lint -w @ccr/web",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present && tsc --noEmit -p tests/e2e",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.mts",
+    "test:e2e": "npm run build && playwright test",
     "db:generate": "npm run db:generate -w @ccr/database",
     "db:migrate": "npm run db:migrate -w @ccr/database",
     "db:deploy": "npm run db:deploy -w @ccr/database",
@@ -26,6 +27,7 @@
     "setup": "npm run db:generate && npm run db:deploy && npm run db:seed"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/node": "^24.0.0",
     "typescript": "5.9.3",
     "vitest": "^4.1.11"

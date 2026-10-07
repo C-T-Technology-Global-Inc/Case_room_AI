@@ -10,10 +10,10 @@ import { parseMentions } from "@/lib/mentions";
 import type { SessionUser } from "../auth/session";
 import { assertCaseAccess } from "../authz/case-access";
 import { assertCan } from "../authz/permissions";
-import { NotFoundError } from "../errors";
+import { AppError, NotFoundError } from "../errors";
 import { realtime } from "../realtime/bus";
 import { buildCaseContext, getAIProvider } from "./ai";
-import { finishAIRun, reserveAIRun } from "./ai-quota";
+import { AIRunLostError, completeAIRunInTransaction, finishAIRun, reserveAIRun, startAIRunHeartbeat, type AIRunHeartbeat } from "./ai-quota";
 import { recordAudit } from "./audit";
 import { touchCaseRoom } from "./system-messages";
 
@@ -119,6 +119,7 @@ export async function answerInDiscussion(input: {
 }) {
   const { caseRoomId, question, requester } = input;
   const requestId = randomUUID();
+  let heartbeat: AIRunHeartbeat | null = null;
   await realtime.publish({
     type: "ai.thinking",
     caseRoomId,
@@ -128,6 +129,9 @@ export async function answerInDiscussion(input: {
   });
 
   try {
+    // Claim the reservation made when the question was posted; if it was closed meanwhile, do not call the model.
+    heartbeat = await startAIRunHeartbeat(input.aiRunId);
+    if (!heartbeat) throw new AIRunLostError();
     const ctx = await buildCaseContext(caseRoomId, requester.id);
     const result = await getAIProvider().answerCaseQuestion(ctx, { text: question, requester: ctx.requester });
     const metadata: AIAnswerMetadata = {
@@ -143,8 +147,9 @@ export async function answerInDiscussion(input: {
       droppedCitations: result.output.droppedCitations,
       latencyMs: result.latencyMs,
     };
-    // The answer and its audit row commit together.
+    // The answer, its audit row and the run's completion commit together (or not at all if the run was lost).
     const message = await prisma.$transaction(async (tx) => {
+      await completeAIRunInTransaction(tx, input.aiRunId);
       const message = await tx.message.create({
         data: { caseRoomId, type: "AI", content: result.output.answer, metadata: metadata as Prisma.InputJsonValue },
       });
@@ -167,20 +172,20 @@ export async function answerInDiscussion(input: {
       await touchCaseRoom(tx, caseRoomId);
       return message;
     });
-    await finishAIRun(input.aiRunId, "SUCCEEDED");
     await realtime.publish({ type: "message.created", caseRoomId, messageId: message.id });
   } catch (error) {
     await finishAIRun(input.aiRunId, "FAILED", error);
     console.error("[ai] answer failed", error);
+    const userMessage = error instanceof AppError ? error.message : toUserMessage(error);
     const metadata: AIErrorMetadata = {
       kind: "ai_error",
       question,
       questionMessageId: input.questionMessageId,
-      error: toUserMessage(error),
+      error: userMessage,
     };
     const message = await prisma.$transaction(async (tx) => {
       const message = await tx.message.create({
-        data: { caseRoomId, type: "AI", content: toUserMessage(error), metadata: metadata as Prisma.InputJsonValue },
+        data: { caseRoomId, type: "AI", content: userMessage, metadata: metadata as Prisma.InputJsonValue },
       });
       await recordAudit(tx, {
         organizationId: input.organizationId,
@@ -197,6 +202,7 @@ export async function answerInDiscussion(input: {
     });
     await realtime.publish({ type: "message.created", caseRoomId, messageId: message.id });
   } finally {
+    heartbeat?.stop();
     await realtime.publish({ type: "ai.done", caseRoomId, requestId });
     await realtime.touch(caseRoomId, ["audit"]);
   }

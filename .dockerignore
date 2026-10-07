@@ -1,0 +1,30 @@
+# Never send secrets, local data or machine-specific builds to the image build.
+.git
+.github
+**/node_modules
+**/.next
+**/.turbo
+**/coverage
+**/*.log
+**/*.tsbuildinfo
+.DS_Store
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+apps/web/.env
+
+# Uploaded originals and other runtime data
+.storage
+**/.storage
+
+# Generated in the image from the schema
+packages/database/src/generated
+
+# Not needed to build or run
+docs
+CODEX_*.md
+docker-compose.yml
+Dockerfile
+.dockerignore

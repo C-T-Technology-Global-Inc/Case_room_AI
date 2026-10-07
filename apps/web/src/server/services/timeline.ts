@@ -8,7 +8,7 @@ import { assertCan } from "../authz/permissions";
 import { ValidationError } from "../errors";
 import { realtime } from "../realtime/bus";
 import { buildCaseContext, getAIProvider } from "./ai";
-import { withAIRun } from "./ai-quota";
+import { completeAIRunInTransaction, withAIRun } from "./ai-quota";
 import { recordAudit } from "./audit";
 import { touchCaseRoom } from "./system-messages";
 
@@ -75,7 +75,7 @@ export async function regenerateTimeline(user: SessionUser, caseRoomId: string) 
   await assertCaseAccess(user, caseRoomId);
   const ctx = await buildCaseContext(caseRoomId, user.id);
   if (ctx.documents.length === 0) throw new ValidationError("Upload clinical documents first.");
-  const events = await withAIRun(user, { task: "timeline" }, async () => {
+  const events = await withAIRun(user, { task: "timeline" }, async (runId) => {
     const result = await getAIProvider().generateTimeline(ctx, ctx.documents);
     // Never trade an existing timeline for an empty one (the documents did not change).
     if (result.output.length === 0 && ctx.timeline.some((event) => event.createdByAI)) {
@@ -83,6 +83,7 @@ export async function regenerateTimeline(user: SessionUser, caseRoomId: string) 
     }
 
     await prisma.$transaction(async (tx) => {
+      await completeAIRunInTransaction(tx, runId);
       await tx.timelineEvent.deleteMany({ where: { caseRoomId, createdByAI: true } });
       for (const event of result.output) {
         await tx.timelineEvent.create({

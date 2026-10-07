@@ -582,10 +582,14 @@ model AIRun {
   provider       String?
   error          String?
   createdAt      DateTime    @default(now())
+  /// Refreshed every 30 s while the job runs. A RESERVED run whose heartbeat
+  /// stopped belongs to a process that died; it is closed as FAILED (still counted).
+  heartbeatAt    DateTime    @default(now())
   finishedAt     DateTime?
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, createdAt])
   @@index([createdAt])
+  @@index([status, heartbeatAt])
 }

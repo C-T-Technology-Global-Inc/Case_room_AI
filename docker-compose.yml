@@ -1,9 +1,16 @@
-# Local infrastructure for Clinical Case Room.
+# Clinical Case Room with Docker.
+#
+# Local development (app runs on your machine with `npm run dev`):
 #   docker compose up -d postgres          # database only
 #   docker compose up -d                   # database + MinIO (S3-compatible storage)
-# Then set in .env:
+#   Then set in .env:
 #   DATABASE_URL="postgresql://postgres:postgres@localhost:5432/clinical_case_room"
 #   S3_BUCKET="case-room" S3_ENDPOINT="http://localhost:9000" S3_ACCESS_KEY_ID="minio" S3_SECRET_ACCESS_KEY="minio-secret" S3_FORCE_PATH_STYLE="true"
+#
+# Everything in containers (see docs/DEPLOYMENT.md):
+#   AUTH_SECRET=$(openssl rand -base64 32) docker compose --profile app up -d --build
+#   AUTH_SECRET=... docker compose --profile demo run --rm seed     # synthetic demo data (erases the database)
+#   open http://localhost:3000
 
 services:
   postgres:
@@ -41,6 +48,55 @@ services:
     entrypoint: >
       /bin/sh -c "sleep 3 && mc alias set local http://minio:9000 minio minio-secret && mc mb --ignore-existing local/case-room"
 
+  migrate:
+    profiles: ["app", "demo"]
+    build:
+      context: .
+      target: migrate
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/clinical_case_room
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  seed:
+    profiles: ["demo"]
+    build:
+      context: .
+      target: seed
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/clinical_case_room
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+  web:
+    profiles: ["app"]
+    build:
+      context: .
+      target: runner
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/clinical_case_room
+      # Required: a long random string (openssl rand -base64 32). Kept optional here so that
+      # `docker compose up -d postgres` works without it; the app refuses to sign anyone in without it.
+      AUTH_SECRET: ${AUTH_SECRET:-}
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      AUTH_URL: ${APP_URL:-http://localhost:3000}
+      AI_PROVIDER: ${AI_PROVIDER:-demo}
+      DEMO_LOGIN: ${DEMO_LOGIN:-true}
+      SOURCE_CODE_URL: ${SOURCE_CODE_URL:-}
+    volumes:
+      - storage-data:/data/storage
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
 volumes:
   postgres-data:
   minio-data:
+  storage-data:

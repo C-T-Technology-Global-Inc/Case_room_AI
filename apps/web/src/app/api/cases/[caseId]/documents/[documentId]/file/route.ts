@@ -1,6 +1,7 @@
 import { getSessionUser } from "@/server/auth/session";
 import { AppError } from "@/server/errors";
 import { getDocumentFile } from "@/server/services/documents";
+import { StorageUnavailableError } from "@/server/storage";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -28,6 +29,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ cas
     });
   } catch (error) {
     if (error instanceof AppError) return new Response("Not found", { status: 404 });
+    if (error instanceof StorageUnavailableError) {
+      console.error("[storage]", error.message, error.cause);
+      return new Response("The file storage is temporarily unavailable. Try again later.", { status: 503, headers: { "Retry-After": "30" } });
+    }
     throw error;
   }
 }

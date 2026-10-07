@@ -83,6 +83,7 @@ The AI layer is provider-agnostic (`packages/ai`). Choose a provider in `.env`:
 | `npm run lint` | ESLint (Next.js rules) |
 | `npm test` | Unit tests (Vitest) |
 | `npm run test:integration` | Service tests against PostgreSQL (row locks, races, atomicity). Needs `TEST_DATABASE_URL` pointing to a separate database whose name ends in `_test`; the tests erase it |
+| `npm run test:e2e` | Builds the app and runs the Playwright browser tests of the core demo story against a separate database (`E2E_DATABASE_URL`, name ending in `_e2e`) |
 
 ## Project structure
 
@@ -122,9 +123,11 @@ Next.js 16 (App Router, server actions, Turbopack) · React 19 · TypeScript · 
 
 More detail in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-## Optional: Docker
+## Docker and deployment
 
-`docker compose up -d` starts PostgreSQL (and MinIO for S3-compatible storage; set `S3_*` in `.env` to use it). The app itself runs with `npm run dev`.
+- Development: `docker compose up -d postgres` starts PostgreSQL (`docker compose up -d` adds MinIO for S3-compatible storage; set `S3_*` in `.env` to use it). The app runs with `npm run dev`.
+- Everything in containers: `AUTH_SECRET=$(openssl rand -base64 32) docker compose --profile app up -d --build`, then `docker compose --profile demo run --rm seed` for the synthetic demo data.
+- Deploying for others to use: read [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) (images, configuration, release steps, reverse proxy, backups, checklist).
 
 ## Out of scope for this MVP
 

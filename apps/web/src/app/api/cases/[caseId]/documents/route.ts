@@ -8,7 +8,7 @@ import { assertCan } from "@/server/authz/permissions";
 import { AppError, ForbiddenError, NotFoundError, PayloadTooLargeError, RateLimitError, ValidationError } from "@/server/errors";
 import { readFormDataWithLimit } from "@/server/http/limited-body";
 import { envLimit } from "@/server/rate-limit";
-import { finishAIRun, reserveAIRun } from "@/server/services/ai-quota";
+import { finishAIRun, reserveAIRun, startAIRunHeartbeat, type AIRunHeartbeat } from "@/server/services/ai-quota";
 import { createDocument, extractUploadText, MAX_UPLOAD_BYTES, processDocument } from "@/server/services/documents";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +35,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   let aiRunId: string | null = null;
+  let heartbeat: AIRunHeartbeat | null = null;
   let handedToProcessing = false;
   let holdsSlot = false;
   try {
@@ -48,6 +49,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
     holdsSlot = true;
     // Every upload triggers AI processing (two model calls): reserve that budget before reading the body.
     aiRunId = (await reserveAIRun(user, { task: "document", units: 2 })).id;
+    // Until processDocument (which claims the run again) takes over after the response.
+    heartbeat = await startAIRunHeartbeat(aiRunId);
 
     const form = await readFormDataWithLimit(request, MAX_REQUEST_BYTES);
     if ([...form.keys()].length > MAX_FORM_FIELDS || form.getAll("file").length > 1) {
@@ -84,6 +87,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
     console.error("[upload]", error);
     return NextResponse.json({ error: "Upload failed. Please try again." }, { status: 500 });
   } finally {
+    heartbeat?.stop();
     if (holdsSlot) globalForUploads.__ccrActiveUploads = Math.max(0, (globalForUploads.__ccrActiveUploads ?? 1) - 1);
     // Nothing was sent to the model: give the reserved budget back.
     if (aiRunId && !handedToProcessing) await finishAIRun(aiRunId, "RELEASED");

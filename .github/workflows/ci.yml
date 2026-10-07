@@ -65,6 +65,125 @@ jobs:
       - run: npm ci
       - run: npm run test:integration
 
+  e2e:
+    name: End-to-end tests (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      E2E_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/clinical_case_room_e2e
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: clinical_case_room_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - name: Upload the report and traces (synthetic data only)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
+  container:
+    name: Container image (build and smoke test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/clinical_case_room
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: clinical_case_room
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the PostgreSQL client
+        run: command -v psql || (sudo apt-get update && sudo apt-get install -y postgresql-client)
+      - name: Plant sentinels that must never reach an image
+        run: |
+          mkdir -p apps/web/.storage/cases/sentinel
+          echo "CCR-SENTINEL-UPLOAD" > apps/web/.storage/cases/sentinel/report.txt
+          echo "CCR_SENTINEL_SECRET=1" > .env
+      - name: Build images
+        run: |
+          docker build --target migrate -t case-room-migrate .
+          docker build --target seed -t case-room-seed .
+          docker build -t case-room .
+      - name: Image contains no uploads, secrets or sentinels
+        run: |
+          found="$(docker run --rm --entrypoint sh case-room -c \
+            'find /app /data \( -name .storage -o -name .env -o -name ".env.*" \) 2>/dev/null; grep -rIl "CCR-SENTINEL\|CCR_SENTINEL" /app /data 2>/dev/null' || true)"
+          if [ -n "$found" ]; then
+            echo "::error::The image contains uploaded files, an .env file or a sentinel"
+            echo "$found"
+            exit 1
+          fi
+      - name: Run migrations and load synthetic demo data
+        run: |
+          docker run --rm --network host -e DATABASE_URL case-room-migrate
+          docker run --rm --network host -e DATABASE_URL case-room-seed
+      - name: Start the web container
+        run: |
+          docker run -d --name web --network host \
+            -e DATABASE_URL -e AUTH_SECRET -e AI_PROVIDER \
+            -e APP_URL=http://localhost:3000 -e SOURCE_CODE_URL=https://example.invalid/source \
+            case-room
+      - name: Smoke test (PDF upload, stored original, background processing, download)
+        run: scripts/smoke-container.sh http://localhost:3000
+      - name: Runs as a non-root user
+        run: test "$(docker exec web id -u)" != "0"
+      - name: Smoke test fails when uploaded originals cannot be stored
+        run: |
+          docker run -d --name web-broken-storage --network host \
+            -e DATABASE_URL -e AUTH_SECRET -e AI_PROVIDER -e PORT=3001 \
+            -e APP_URL=http://localhost:3001 -e STORAGE_DIR=/proc/ccr-storage \
+            case-room
+          if scripts/smoke-container.sh http://localhost:3001; then
+            echo "::error::The smoke test passed although the storage was unusable"
+            exit 1
+          fi
+          docker rm -f web-broken-storage
+      - name: Container logs and cleanup
+        if: always()
+        run: |
+          for name in web web-broken-storage; do
+            if docker ps -a --format '{{.Names}}' | grep -qx "$name"; then
+              echo "::group::$name logs"
+              docker logs "$name" || true
+              echo "::endgroup::"
+              docker rm -f "$name" >/dev/null || true
+            fi
+          done
+
   sign-off:
     name: Commits signed off (DCO)
     if: github.event_name == 'pull_request'
