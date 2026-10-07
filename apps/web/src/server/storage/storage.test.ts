@@ -1,3 +1,5 @@
+import { execFileSync } from "node:child_process";
+import { closeSync, constants, openSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -35,5 +37,37 @@ describe("file storage errors", () => {
     expect(isMissingObject({ name: "AccessDenied", $metadata: { httpStatusCode: 403 } })).toBe(false);
     expect(isMissingObject({ name: "InternalError", $metadata: { httpStatusCode: 500 } })).toBe(false);
     expect(isMissingObject(new Error("socket hang up"))).toBe(false);
+  });
+
+  it("gives up on a storage operation that hangs, instead of holding the request forever", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "ccr-storage-"));
+    await mkdir(path.join(root, "cases"), { recursive: true });
+    // Named pipes nobody opens from the other side: opening one blocks indefinitely, like a hung mount.
+    const writePipe = path.join(root, "cases", "hung-write.pdf");
+    const readPipe = path.join(root, "cases", "hung-read.pdf");
+    execFileSync("mkfifo", [writePipe, readPipe]);
+    const storage: FileStorage = new LocalFileStorage(root, 300);
+    try {
+      const started = Date.now();
+      await expect(storage.put("cases/hung-write.pdf", Buffer.from("synthetic"), "application/pdf")).rejects.toThrow(/did not respond within/);
+      await expect(storage.get("cases/hung-read.pdf")).rejects.toThrow(/did not respond within/);
+      expect(Date.now() - started).toBeLessThan(3_000);
+    } finally {
+      // Release the blocked opens so no worker thread stays stuck after the test.
+      closeSync(openSync(writePipe, constants.O_RDONLY | constants.O_NONBLOCK));
+      closeSync(openSync(readPipe, constants.O_WRONLY | constants.O_NONBLOCK));
+    }
+  });
+
+  it("reports write failures as storage unavailable", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "ccr-storage-"));
+    if (process.getuid?.() === 0) return;
+    await chmod(root, 0o500);
+    const storage: FileStorage = new LocalFileStorage(root);
+    try {
+      await expect(storage.put("cases/c1/report.pdf", Buffer.from("synthetic"), "application/pdf")).rejects.toBeInstanceOf(StorageUnavailableError);
+    } finally {
+      await chmod(root, 0o700);
+    }
   });
 });

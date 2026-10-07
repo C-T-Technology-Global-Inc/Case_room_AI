@@ -158,14 +158,17 @@ jobs:
             -e APP_URL=http://localhost:3000 -e SOURCE_CODE_URL=https://example.invalid/source \
             case-room
       - name: Smoke test (PDF upload, stored original, background processing, download)
+        timeout-minutes: 5
         run: scripts/smoke-container.sh http://localhost:3000
       - name: Runs as a non-root user
         run: test "$(docker exec web id -u)" != "0"
       - name: Smoke test fails when uploaded originals cannot be stored
+        timeout-minutes: 5
         run: |
+          # The non-root app user cannot create directories under /usr/local (EACCES).
           docker run -d --name web-broken-storage --network host \
             -e DATABASE_URL -e AUTH_SECRET -e AI_PROVIDER -e PORT=3001 \
-            -e APP_URL=http://localhost:3001 -e STORAGE_DIR=/proc/ccr-storage \
+            -e APP_URL=http://localhost:3001 -e STORAGE_DIR=/usr/local/ccr-storage \
             case-room
           if scripts/smoke-container.sh http://localhost:3001; then
             echo "::error::The smoke test passed although the storage was unusable"

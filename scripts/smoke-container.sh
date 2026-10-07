@@ -15,6 +15,8 @@ PDF="$HERE/fixtures/synthetic-report.pdf"
 JAR="$(mktemp)"
 DOWNLOAD="$(mktemp)"
 trap 'rm -f "$JAR" "$DOWNLOAD"' EXIT
+# Every request has a deadline: a hung server fails the smoke test fast instead of hanging the CI job.
+curl() { command curl --connect-timeout 5 --max-time "${SMOKE_REQUEST_TIMEOUT:-60}" "$@"; }
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }

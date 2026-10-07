@@ -7,6 +7,7 @@ import { assertCaseAccess } from "@/server/authz/case-access";
 import { assertCan } from "@/server/authz/permissions";
 import { AppError, ForbiddenError, NotFoundError, PayloadTooLargeError, RateLimitError, ValidationError } from "@/server/errors";
 import { readFormDataWithLimit } from "@/server/http/limited-body";
+import { StorageUnavailableError } from "@/server/storage";
 import { envLimit } from "@/server/rate-limit";
 import { finishAIRun, reserveAIRun, startAIRunHeartbeat, type AIRunHeartbeat } from "@/server/services/ai-quota";
 import { createDocument, extractUploadText, MAX_UPLOAD_BYTES, processDocument } from "@/server/services/documents";
@@ -77,6 +78,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
     return NextResponse.json({ id: document.id, characters: text.length }, { status: 201 });
   } catch (error) {
     if (error instanceof PayloadTooLargeError) return NextResponse.json({ error: error.message }, { status: 413 });
+    if (error instanceof StorageUnavailableError) {
+      console.error("[upload] storage", error.message, error.cause);
+      return NextResponse.json(
+        { error: "The file storage is unavailable, so the document was not saved. Try again later." },
+        { status: 503, headers: { "Retry-After": "30" } },
+      );
+    }
     if (error instanceof RateLimitError) return NextResponse.json({ error: error.message }, { status: 429 });
     if (error instanceof NotFoundError) return NextResponse.json({ error: error.message }, { status: 404 });
     if (error instanceof ForbiddenError) return NextResponse.json({ error: error.message }, { status: 403 });
