@@ -39,6 +39,7 @@ npm run typecheck
 npm test                        # unit tests
 npm run build
 npm run test:integration        # services against PostgreSQL
+npm run test:e2e                # browser tests of the core demo story (Playwright)
 ```
 
 Integration tests need a separate database whose name ends in `_test`, because they erase it:
@@ -50,6 +51,18 @@ TEST_DATABASE_URL="postgresql://USER@localhost:5432/clinical_case_room_test"
 ```
 
 The test configuration refuses to run against a database that is not named `*_test` or that is the same as `DATABASE_URL`.
+
+End-to-end tests build the app, start it against their own database, and drive it in Chromium with two or more signed-in users. They need a database whose name ends in `_e2e` (it is erased and re-seeded on every run) and the Playwright browser:
+
+```bash
+createdb clinical_case_room_e2e
+# in .env:
+E2E_DATABASE_URL="postgresql://USER@localhost:5432/clinical_case_room_e2e"
+npx playwright install chromium
+npm run test:e2e
+```
+
+When a test fails, `npx playwright show-trace test-results/<test>/trace.zip` replays it step by step. Tests must wait for visible state (`expect(...).toBeVisible()`), never for a fixed time; there are no automatic retries, so a flaky test fails the build.
 
 ## Writing code
 
@@ -79,6 +92,10 @@ git commit -s -m "Fix stale approval message"
 
 This adds `Signed-off-by: Your Name <you@example.com>` using your Git name and email. CI checks that every commit in a pull request has it. To sign off commits you already made: `git rebase --signoff main`, then force-push your branch.
 
+## Contributor License Agreement
+
+Besides the DCO sign-off, contributors will be asked to sign a **Contributor License Agreement (CLA)** before their first pull request is merged. The CLA keeps your copyright with you and grants C-T Technology Global Inc. the rights it needs to maintain the project and offer it under other license terms in addition to the AGPL. The agreement is being finalized with legal counsel; until it is published, pull requests are welcome and will be reviewed, but external code is not merged.
+
 ## License
 
-Clinical Case Room is licensed under the [GNU Affero General Public License v3.0](LICENSE). By contributing, you agree that your contributions are licensed under the same license.
+Clinical Case Room is licensed under the [GNU Affero General Public License v3.0](LICENSE). Your contributions are made available under the same license, and under the terms of the CLA once you have signed it.

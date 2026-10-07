@@ -15,6 +15,12 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["pg", "@prisma/adapter-pg", "unpdf", "@aws-sdk/client-s3"],
   turbopack: { root: monorepoRoot },
   outputFileTracingRoot: monorepoRoot,
+  // Container builds (Dockerfile) set NEXT_OUTPUT=standalone: a self-contained server in .next/standalone.
+  output: process.env.NEXT_OUTPUT === "standalone" ? "standalone" : undefined,
+  // Runtime data and secrets never belong in a build artifact, whichever bundler traces the files.
+  outputFileTracingExcludes: {
+    "**": [".storage/**/*", ".env", ".env.*", "test-results/**/*", "playwright-report/**/*"],
+  },
   poweredByHeader: false,
   devIndicators: { position: "bottom-right" },
   experimental: {

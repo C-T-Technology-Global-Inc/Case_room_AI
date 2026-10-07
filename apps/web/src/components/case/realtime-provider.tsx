@@ -41,6 +41,9 @@ interface RealtimeState {
 const RealtimeContext = createContext<RealtimeState | null>(null);
 
 const PRESENCE_TTL_MS = 50_000;
+/** Backoff for reconnecting after the browser gave up on the stream (see "error" below). */
+const RECONNECT_MIN_MS = 1_000;
+const RECONNECT_MAX_MS = 30_000;
 const TYPING_TTL_MS = 4_000;
 
 export function CaseRealtimeProvider({
@@ -74,7 +77,11 @@ export function CaseRealtimeProvider({
   }, [router]);
 
   useEffect(() => {
-    const source = new EventSource(`/api/cases/${caseId}/events`);
+    let source: EventSource | null = null;
+    let disposed = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let retryDelay = RECONNECT_MIN_MS;
+    // Counts "ready" events across reconnections: every one after the first means events may have been missed.
     let readyCount = 0;
     const emit = (event: CaseRealtimeEvent) => {
       for (const listener of listeners.current) listener(event);
@@ -86,10 +93,22 @@ export function CaseRealtimeProvider({
       emit({ type: "resync", caseRoomId: caseId });
     };
 
-    source.addEventListener("open", () => setConnected(true));
-    source.addEventListener("error", () => setConnected(false));
-    source.addEventListener("ready", (message) => {
+    const onOpen = () => setConnected(true);
+    const onError = () => {
+      setConnected(false);
+      // The browser retries network errors by itself, but gives up for good after an HTTP error
+      // (for example a 502 from a proxy during a deploy). Reconnect with backoff in that case.
+      if (disposed || retryTimer || source?.readyState !== EventSource.CLOSED) return;
+      const delay = retryDelay * (0.75 + Math.random() * 0.5);
+      retryDelay = Math.min(retryDelay * 2, RECONNECT_MAX_MS);
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        if (!disposed) connect();
+      }, delay);
+    };
+    const onReady = (message: Event) => {
       setConnected(true);
+      retryDelay = RECONNECT_MIN_MS;
       const data = JSON.parse((message as MessageEvent<string>).data) as {
         presence: Array<{ userId: string; name: string }>;
         version: string | null;
@@ -103,8 +122,8 @@ export function CaseRealtimeProvider({
       // After a reconnect anything may have changed; on the first connection, only if the case
       // changed between rendering this page and subscribing.
       if (readyCount > 1 || data.version !== renderedVersion.current) resync();
-    });
-    source.addEventListener("case", (message) => {
+    };
+    const onCase = (message: Event) => {
       const event = JSON.parse((message as MessageEvent<string>).data) as CaseRealtimeEvent;
       if (event.type === "resync") {
         resync();
@@ -138,7 +157,17 @@ export function CaseRealtimeProvider({
           break;
       }
       emit(event);
-    });
+    };
+
+    function connect() {
+      source?.close();
+      source = new EventSource(`/api/cases/${caseId}/events`);
+      source.addEventListener("open", onOpen);
+      source.addEventListener("error", onError);
+      source.addEventListener("ready", onReady);
+      source.addEventListener("case", onCase);
+    }
+    connect();
 
     const sweep = setInterval(() => {
       const now = Date.now();
@@ -154,7 +183,9 @@ export function CaseRealtimeProvider({
     }, 2_000);
 
     return () => {
-      source.close();
+      disposed = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      source?.close();
       clearInterval(sweep);
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
     };

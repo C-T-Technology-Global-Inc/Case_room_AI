@@ -9,7 +9,7 @@ import { assertCan } from "../authz/permissions";
 import { ConflictError, NotFoundError, ValidationError } from "../errors";
 import { realtime } from "../realtime/bus";
 import { buildCaseContext, getAIProvider } from "./ai";
-import { bothModelCalls, withAIRun } from "./ai-quota";
+import { bothModelCalls, completeAIRunInTransaction, withAIRun } from "./ai-quota";
 import { recordAudit } from "./audit";
 import { updateMemory } from "./memory";
 import { postSystemMessage, touchCaseRoom } from "./system-messages";
@@ -47,13 +47,14 @@ export async function generateCaseSummary(user: SessionUser, caseRoomId: string)
   const ctx = await buildCaseContext(caseRoomId, user.id);
   requireEmptyGuard(ctx.documents.length);
   // Two model calls (summary + missing information), reserved before either runs.
-  const brief = await withAIRun(user, { task: "case_summary", units: 2 }, async () => {
+  const brief = await withAIRun(user, { task: "case_summary", units: 2 }, async (runId) => {
     const provider = getAIProvider();
     const [summary, missing] = await bothModelCalls(provider.generateCaseSummary(ctx), provider.identifyMissingInformation(ctx));
 
     const content: CaseSummaryContent = { kind: "case_summary", ...summary.output, missingInformation: missing.output };
     // The model ran above; the brief, the memory update and the audit row commit together or not at all.
     return prisma.$transaction(async (tx) => {
+      await completeAIRunInTransaction(tx, runId);
       const brief = await tx.caseBrief.create({
         data: {
           caseRoomId,
@@ -96,12 +97,13 @@ async function generateSectionsBrief(user: SessionUser, caseRoomId: string, type
   await assertCaseAccess(user, caseRoomId);
   const ctx = await buildCaseContext(caseRoomId, user.id);
   requireEmptyGuard(ctx.documents.length);
-  const brief = await withAIRun(user, { task: type === "TUMOR_BOARD" ? "tumor_board" : "handoff" }, async () => {
+  const brief = await withAIRun(user, { task: type === "TUMOR_BOARD" ? "tumor_board" : "handoff" }, async (runId) => {
     const provider = getAIProvider();
     const result = type === "TUMOR_BOARD" ? await provider.generateTumorBoardBrief(ctx) : await provider.generateHandoff(ctx);
     const date = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
     return prisma.$transaction(async (tx) => {
+      await completeAIRunInTransaction(tx, runId);
       const brief = await tx.caseBrief.create({
         data: {
           caseRoomId,

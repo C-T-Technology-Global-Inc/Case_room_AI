@@ -8,14 +8,18 @@ import { z } from "zod";
 import type { SessionUser } from "../auth/session";
 import { assertCaseAccess } from "../authz/case-access";
 import { assertCan } from "../authz/permissions";
-import { ValidationError } from "../errors";
+import { AppError, ValidationError } from "../errors";
 import { realtime } from "../realtime/bus";
 import { getStorage } from "../storage";
 import { buildCaseContext, getAIProvider } from "./ai";
-import { bothModelCalls, finishAIRun } from "./ai-quota";
+import { AIRunLostError, bothModelCalls, completeAIRunInTransaction, finishAIRun, startAIRunHeartbeat, type AIRunHeartbeat } from "./ai-quota";
 import { recordAudit } from "./audit";
 import { updateMemory } from "./memory";
 import { postSystemMessage, touchCaseRoom } from "./system-messages";
+
+/** The document itself is stored; only the AI processing (timeline, memory) was not saved. */
+const DOCUMENT_RUN_LOST =
+  "AI processing was interrupted and its results (timeline events, memory facts) were not saved. The document itself is stored.";
 
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const MAX_TEXT_CHARS = 200_000;
@@ -119,87 +123,125 @@ export async function processDocument(documentId: string, requestedById: string,
   }
   const { caseRoomId } = document;
   const organizationId = document.caseRoom.organizationId;
-
-  await prisma.clinicalDocument.update({ where: { id: documentId }, data: { processingStatus: "PROCESSING", processingError: null } });
-  await realtime.touch(caseRoomId, ["documents"]);
+  let heartbeat: AIRunHeartbeat | null = null;
 
   try {
-    // Inside the try: a misconfigured provider must mark the document FAILED, not leave it queued.
-    const provider = getAIProvider();
-    const ctx = await buildCaseContext(caseRoomId, requestedById);
-    const contextDoc = ctx.documents.find((doc) => doc.id === documentId);
-    if (!contextDoc) throw new Error("Document missing from case context");
+    // Claim the reservation made at upload before touching the document. Each upload hands its
+    // run to exactly one processDocument call (retries and re-dispatch come with the durable job
+    // queue, which must also make claims exclusive). A run closed meanwhile was presumed
+    // abandoned: record that the AI processing did not happen, unless it already completed.
+    if (aiRunId) {
+      heartbeat = await startAIRunHeartbeat(aiRunId);
+      if (!heartbeat) {
+        await prisma.$transaction(async (tx) => {
+          const { count } = await tx.clinicalDocument.updateMany({
+            where: { id: documentId, processingStatus: { not: "COMPLETED" } },
+            data: { processingStatus: "FAILED", processingError: DOCUMENT_RUN_LOST },
+          });
+          if (count === 0) return;
+          await recordAudit(tx, {
+            organizationId,
+            caseRoomId,
+            userId: requestedById,
+            actorType: "AI",
+            action: "ai.document_failed",
+            resourceType: "ClinicalDocument",
+            resourceId: documentId,
+            metadata: { title: document.title, error: "AI run closed before processing started (presumed abandoned)" },
+          });
+          await touchCaseRoom(tx, caseRoomId);
+        });
+        await realtime.touch(caseRoomId, ["documents", "audit"]);
+        return;
+      }
+    }
+    await prisma.clinicalDocument.update({ where: { id: documentId }, data: { processingStatus: "PROCESSING", processingError: null } });
+    await realtime.touch(caseRoomId, ["documents"]);
 
-    const [timeline, facts] = await bothModelCalls(provider.generateTimeline(ctx, [contextDoc]), provider.extractMemoryFacts(ctx, contextDoc));
+    try {
+      // Inside the try: a misconfigured provider must mark the document FAILED, not leave it queued.
+      const provider = getAIProvider();
+      const ctx = await buildCaseContext(caseRoomId, requestedById);
+      const contextDoc = ctx.documents.find((doc) => doc.id === documentId);
+      if (!contextDoc) throw new Error("Document missing from case context");
 
-    // Timeline, memory, status and audit commit together: a failure leaves no partial result behind.
-    await prisma.$transaction(
-      async (tx) => {
-        // Re-processing replaces the AI events previously derived from this document.
-        await tx.timelineEvent.deleteMany({ where: { sourceDocumentId: documentId, createdByAI: true } });
-        for (const event of timeline.output) {
-          await tx.timelineEvent.create({
-            data: {
-              caseRoomId,
-              date: new Date(`${event.date}T00:00:00Z`),
-              eventType: event.eventType,
-              title: event.title.slice(0, 200),
-              description: event.description,
-              sourceDocumentId: documentId,
-              createdByAI: true,
+      const [timeline, facts] = await bothModelCalls(provider.generateTimeline(ctx, [contextDoc]), provider.extractMemoryFacts(ctx, contextDoc));
+
+      // Timeline, memory, status and audit commit together: a failure leaves no partial result behind.
+      await prisma.$transaction(
+        async (tx) => {
+          // Fencing first: a run closed meanwhile rolls everything back.
+          if (aiRunId) await completeAIRunInTransaction(tx, aiRunId);
+          // Re-processing replaces the AI events previously derived from this document.
+          await tx.timelineEvent.deleteMany({ where: { sourceDocumentId: documentId, createdByAI: true } });
+          for (const event of timeline.output) {
+            await tx.timelineEvent.create({
+              data: {
+                caseRoomId,
+                date: new Date(`${event.date}T00:00:00Z`),
+                eventType: event.eventType,
+                title: event.title.slice(0, 200),
+                description: event.description,
+                sourceDocumentId: documentId,
+                createdByAI: true,
+              },
+            });
+          }
+          await updateMemory(tx, caseRoomId, (memory) => {
+            const base = memory.processedDocumentIds.includes(documentId) ? removeDocumentFromMemory(memory, documentId) : memory;
+            return mergeMemoryFacts(base, facts.output, contextDoc);
+          });
+          await tx.clinicalDocument.update({
+            where: { id: documentId },
+            data: { processingStatus: "COMPLETED", processedAt: new Date() },
+          });
+          await recordAudit(tx, {
+            organizationId,
+            caseRoomId,
+            userId: requestedById,
+            actorType: "AI",
+            action: "ai.document_processed",
+            resourceType: "ClinicalDocument",
+            resourceId: documentId,
+            metadata: {
+              title: document.title,
+              timelineEvents: timeline.output.length,
+              provider: timeline.provider.id,
+              model: timeline.model,
             },
           });
-        }
-        await updateMemory(tx, caseRoomId, (memory) => {
-          const base = memory.processedDocumentIds.includes(documentId) ? removeDocumentFromMemory(memory, documentId) : memory;
-          return mergeMemoryFacts(base, facts.output, contextDoc);
-        });
+          await touchCaseRoom(tx, caseRoomId);
+        },
+        { timeout: 15_000 },
+      );
+    } catch (error) {
+      console.error("[documents] processing failed", error);
+      if (aiRunId) await finishAIRun(aiRunId, "FAILED", error);
+      await prisma.$transaction(async (tx) => {
         await tx.clinicalDocument.update({
           where: { id: documentId },
-          data: { processingStatus: "COMPLETED", processedAt: new Date() },
+          data: {
+            processingStatus: "FAILED",
+            processingError: error instanceof AIRunLostError ? DOCUMENT_RUN_LOST : error instanceof AppError ? error.message : toUserMessage(error),
+          },
         });
         await recordAudit(tx, {
           organizationId,
           caseRoomId,
           userId: requestedById,
           actorType: "AI",
-          action: "ai.document_processed",
+          action: "ai.document_failed",
           resourceType: "ClinicalDocument",
           resourceId: documentId,
-          metadata: {
-            title: document.title,
-            timelineEvents: timeline.output.length,
-            provider: timeline.provider.id,
-            model: timeline.model,
-          },
+          metadata: { title: document.title, error: error instanceof Error ? error.message : String(error) },
         });
         await touchCaseRoom(tx, caseRoomId);
-      },
-      { timeout: 15_000 },
-    );
-    if (aiRunId) await finishAIRun(aiRunId, "SUCCEEDED");
-  } catch (error) {
-    console.error("[documents] processing failed", error);
-    if (aiRunId) await finishAIRun(aiRunId, "FAILED", error);
-    await prisma.$transaction(async (tx) => {
-      await tx.clinicalDocument.update({
-        where: { id: documentId },
-        data: { processingStatus: "FAILED", processingError: toUserMessage(error) },
       });
-      await recordAudit(tx, {
-        organizationId,
-        caseRoomId,
-        userId: requestedById,
-        actorType: "AI",
-        action: "ai.document_failed",
-        resourceType: "ClinicalDocument",
-        resourceId: documentId,
-        metadata: { title: document.title, error: error instanceof Error ? error.message : String(error) },
-      });
-      await touchCaseRoom(tx, caseRoomId);
-    });
+    }
+    await realtime.touch(caseRoomId, ["documents", "timeline", "memory", "audit"]);
+  } finally {
+    heartbeat?.stop();
   }
-  await realtime.touch(caseRoomId, ["documents", "timeline", "memory", "audit"]);
 }
 
 export async function getDocumentFile(user: SessionUser, caseRoomId: string, documentId: string) {
