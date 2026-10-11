@@ -5,7 +5,7 @@ import { assertCaseAccess } from "../authz/case-access";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "../errors";
 import { createCase } from "./cases";
 import { createAdditionalOrganization, findCaseOrganizationForPerson, switchOrganization } from "./organizations";
-import { acceptInvitation, createOrganization, describeInvitation, inviteMember, joinOrganization } from "./team";
+import { acceptInvitation, describeInvitation, inviteMember, joinOrganization } from "./team";
 
 vi.mock("@/server/realtime/bus", () => ({ realtime: { touch: vi.fn(async () => {}), publish: vi.fn(async () => {}) } }));
 
@@ -133,11 +133,6 @@ describe("creating organizations", () => {
     await expect(createAdditionalOrganization(riverside.proposer, { name: "Capped Org" })).rejects.toThrow(/at most 1/);
   });
 
-  it("sends existing accounts to sign in instead of signing up again", async () => {
-    await expect(
-      createOrganization({ organizationName: "Duplicate Org", name: "Someone", email: riverside.nurse.email, password: "synthetic-password" }),
-    ).rejects.toBeInstanceOf(ValidationError);
-  });
 });
 
 describe("round 2: organization context and concurrency", () => {

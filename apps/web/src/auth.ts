@@ -23,8 +23,8 @@ const credentialsSchema = z.object({
  * Auth.js configuration. Email + password (credentials) with JWT sessions for
  * the MVP; hospital SSO (OIDC / SAML) can be added as additional providers
  * without changing the rest of the application. The session stores only the
- * identity id; the membership in the active organization is resolved on every
- * request (see server/auth/session.ts).
+ * identity id and its session version; the membership in the active
+ * organization is resolved on every request (see server/auth/session.ts).
  */
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
@@ -55,7 +55,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           }
           outcome = "success";
           await rememberDevice(identity.email);
-          return { id: identity.id, name: identity.name, email: identity.email };
+          return { id: identity.id, name: identity.name, email: identity.email, sessionVersion: identity.sessionVersion };
         } finally {
           attempt.finish(outcome);
         }
@@ -64,18 +64,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   ],
   callbacks: {
     jwt({ token, user }) {
-      if (user?.id) token.uid = user.id;
+      if (user?.id) {
+        token.uid = user.id;
+        // Sessions issued before a password change stop working (server/auth/session.ts).
+        token.sv = user.sessionVersion ?? 0;
+      }
       return token;
     },
     session({ session, token }) {
       if (typeof token.uid === "string") session.user.id = token.uid;
+      session.user.sessionVersion = typeof token.sv === "number" ? token.sv : 0;
       return session;
     },
   },
   events: {
     async signIn({ user }) {
       if (!user.id) return;
-      const memberships = await prisma.user.findMany({ where: { identityId: user.id } });
+      const memberships = await prisma.user.findMany({ where: { identityId: user.id, deactivatedAt: null } });
       const member = pickActiveMembership(memberships, await requestedOrganizationId());
       if (!member) return;
       await prisma.$transaction([

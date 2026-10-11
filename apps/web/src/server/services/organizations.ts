@@ -21,9 +21,10 @@ import { uniqueHandle } from "./handles";
 export async function switchOrganization(user: SessionUser, organizationId: string) {
   const membership = await prisma.user.findUnique({
     where: { identityId_organizationId: { identityId: user.identityId, organizationId } },
-    select: { id: true },
+    select: { id: true, deactivatedAt: true },
   });
   if (!membership) throw new NotFoundError("You are not a member of this organization.");
+  if (membership.deactivatedAt) throw new NotFoundError("Your access to this organization was deactivated.");
   await prisma.$transaction(async (tx) => {
     await tx.user.update({ where: { id: membership.id }, data: { lastLoginAt: new Date() } });
     await recordAudit(tx, {
@@ -67,13 +68,15 @@ export async function createAdditionalOrganization(user: SessionUser, raw: z.inp
 
   return prisma.$transaction(async (tx) => {
     await reserveMembershipSlot(tx, user.identityId);
+    // Read the profile under the lock: a name change may have committed while this request waited.
+    const person = await tx.identity.findUniqueOrThrow({ where: { id: user.identityId }, select: { name: true, email: true } });
     const organization = await tx.organization.create({ data: { name } });
     const member = await tx.user.create({
       data: {
         identityId: user.identityId,
-        name: user.name,
-        email: user.email,
-        handle: await uniqueHandle(tx, organization.id, user.name),
+        name: person.name,
+        email: person.email,
+        handle: await uniqueHandle(tx, organization.id, person.name),
         role: "ORG_ADMIN",
         specialty: user.specialty,
         title: user.title,
@@ -100,7 +103,7 @@ export async function createAdditionalOrganization(user: SessionUser, raw: z.inp
  */
 export async function findCaseOrganizationForPerson(user: SessionUser, caseRoomId: string) {
   const memberships = await prisma.user.findMany({
-    where: { identityId: user.identityId, organizationId: { not: user.organizationId } },
+    where: { identityId: user.identityId, organizationId: { not: user.organizationId }, deactivatedAt: null },
     select: { id: true, organizationId: true, role: true },
   });
   if (memberships.length === 0) return null;

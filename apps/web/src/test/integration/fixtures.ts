@@ -4,7 +4,7 @@ import type { SessionUser } from "@/server/auth/session";
 
 /** Erase every table (TRUNCATE skips the row-level audit immutability trigger). */
 export async function resetDatabase() {
-  await prisma.$executeRawUnsafe('TRUNCATE "Organization", "Identity" RESTART IDENTITY CASCADE');
+  await prisma.$executeRawUnsafe('TRUNCATE "Organization", "Identity", "SignupRequest" RESTART IDENTITY CASCADE');
 }
 
 let counter = 0;
@@ -36,8 +36,8 @@ export async function addMembership(identity: { id: string; name: string; email:
 
 /** The SessionUser the app would build for this membership (as if its organization were active). */
 export async function sessionUserFor(memberId: string): Promise<SessionUser> {
-  const member = await prisma.user.findUniqueOrThrow({ where: { id: memberId }, include: { organization: true } });
-  const memberships = await prisma.user.findMany({ where: { identityId: member.identityId }, include: { organization: true } });
+  const member = await prisma.user.findUniqueOrThrow({ where: { id: memberId }, include: { organization: true, identity: true } });
+  const memberships = await prisma.user.findMany({ where: { identityId: member.identityId, deactivatedAt: null }, include: { organization: true } });
   return {
     id: member.id,
     identityId: member.identityId,
@@ -50,6 +50,7 @@ export async function sessionUserFor(memberId: string): Promise<SessionUser> {
     organizationId: member.organizationId,
     organizationName: member.organization.name,
     organizations: memberships.map((m) => ({ id: m.organizationId, name: m.organization.name, role: m.role })),
+    sessionVersion: member.identity.sessionVersion,
   };
 }
 

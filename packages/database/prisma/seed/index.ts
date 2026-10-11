@@ -16,7 +16,7 @@ async function main() {
   console.log("› Resetting demo data…");
   // TRUNCATE bypasses the row-level immutability triggers on AuditEvent by design;
   // it is only used here to reset the demo environment.
-  await prisma.$executeRawUnsafe('TRUNCATE TABLE "Organization", "Identity" RESTART IDENTITY CASCADE');
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "Organization", "Identity", "SignupRequest" RESTART IDENTITY CASCADE');
 
   const org = await prisma.organization.create({
     data: { name: "Riverside Cancer Center (Demo)", createdAt: at(120, "09:00") },

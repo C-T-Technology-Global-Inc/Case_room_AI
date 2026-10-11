@@ -37,7 +37,8 @@ export async function loadCaseContext(
     where: { id: caseRoomId },
     include: {
       patient: true,
-      members: { include: { user: true }, orderBy: { joinedAt: "asc" } },
+      // Deactivated members are not part of the working care team (no task suggestions, no mentions).
+      members: { where: { user: { deactivatedAt: null } }, include: { user: true }, orderBy: { joinedAt: "asc" } },
       documents: { include: { uploadedBy: true }, orderBy: [{ documentDate: "asc" }, { createdAt: "asc" }] },
       timeline: { orderBy: [{ date: "asc" }, { createdAt: "asc" }] },
       decisions: {

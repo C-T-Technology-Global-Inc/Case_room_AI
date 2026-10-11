@@ -49,7 +49,11 @@ export async function listCases(user: SessionUser, filter: { status?: CaseStatus
     },
     include: {
       patient: true,
-      members: { include: { user: { select: { id: true, name: true, specialty: true, role: true } } }, orderBy: { joinedAt: "asc" } },
+      members: {
+        where: { user: { deactivatedAt: null } },
+        include: { user: { select: { id: true, name: true, specialty: true, role: true } } },
+        orderBy: { joinedAt: "asc" },
+      },
       _count: {
         select: {
           documents: true,
@@ -70,7 +74,9 @@ export async function getCaseRoomOverview(user: SessionUser, caseRoomId: string)
     include: {
       patient: true,
       createdBy: { select: { id: true, name: true } },
+      // The care team shown and offered in pickers (mentions, reviewers, assignees): active members only.
       members: {
+        where: { user: { deactivatedAt: null } },
         include: { user: { select: { id: true, name: true, specialty: true, role: true, title: true, handle: true } } },
         orderBy: { joinedAt: "asc" },
       },
@@ -113,7 +119,7 @@ export async function createCase(user: SessionUser, rawInput: CreateCaseInput) {
   assertFormOrganization(user, input.organizationId);
 
   const members = await prisma.user.findMany({
-    where: { id: { in: input.memberIds }, organizationId: user.organizationId },
+    where: { id: { in: input.memberIds }, organizationId: user.organizationId, deactivatedAt: null },
     select: { id: true, name: true, specialty: true },
   });
   const mrn = await nextSyntheticMrn();
@@ -203,7 +209,7 @@ export async function addCaseMembers(user: SessionUser, caseRoomId: string, user
   const existing = await prisma.caseRoomMember.findMany({ where: { caseRoomId }, select: { userId: true } });
   const existingIds = new Set(existing.map((m) => m.userId));
   const candidates = await prisma.user.findMany({
-    where: { id: { in: userIds }, organizationId: user.organizationId },
+    where: { id: { in: userIds }, organizationId: user.organizationId, deactivatedAt: null },
     select: { id: true, name: true, specialty: true },
   });
   const toAdd = candidates.filter((c) => !existingIds.has(c.id));
@@ -230,10 +236,10 @@ export async function addCaseMembers(user: SessionUser, caseRoomId: string, user
   return toAdd;
 }
 
-/** Organization members who could be added to a case. */
+/** Active organization members who could be added to a case. */
 export function listOrganizationMembers(user: SessionUser) {
   return prisma.user.findMany({
-    where: { organizationId: user.organizationId },
+    where: { organizationId: user.organizationId, deactivatedAt: null },
     select: { id: true, name: true, specialty: true, role: true, title: true, handle: true },
     orderBy: { name: "asc" },
   });

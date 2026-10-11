@@ -51,7 +51,7 @@ async function validateReferences(
   proposerId: string,
 ) {
   const members = await db.caseRoomMember.findMany({
-    where: { caseRoomId, userId: { in: input.reviewerIds } },
+    where: { caseRoomId, userId: { in: input.reviewerIds }, user: { deactivatedAt: null } },
     include: { user: { select: { id: true, name: true, role: true, organizationId: true } } },
   });
   const reviewers = members.map((m) => m.user).filter((u) => u.organizationId === organizationId);
@@ -372,7 +372,9 @@ export async function createFollowUpTasks(user: SessionUser, decisionId: string,
   if (!decision) throw new NotFoundError("Decision not found");
   await assertCaseAccess(user, decision.caseRoomId);
   const memberIds = new Set(
-    (await prisma.caseRoomMember.findMany({ where: { caseRoomId: decision.caseRoomId }, select: { userId: true } })).map((m) => m.userId),
+    (
+      await prisma.caseRoomMember.findMany({ where: { caseRoomId: decision.caseRoomId, user: { deactivatedAt: null } }, select: { userId: true } })
+    ).map((m) => m.userId),
   );
 
   await prisma.$transaction(async (tx) => {
