@@ -60,6 +60,18 @@ export function describeActivity(event: ActivityInput): { text: string; kind: Ac
       return { text: `${who} joined the organization.`, kind: "org" };
     case "org.member_role_changed":
       return { text: `${who} changed ${str(m.memberName) ?? "a member"}'s role to ${str(m.to) ?? "a new role"}.`, kind: "org" };
+    case "org.member_deactivated":
+      return { text: `${who} deactivated ${str(m.memberName) ?? "a member"}'s access.`, kind: "org" };
+    case "org.member_reactivated":
+      return { text: `${who} reactivated ${str(m.memberName) ?? "a member"}'s access.`, kind: "org" };
+    case "org.renamed":
+      return { text: `${who} renamed the organization to “${str(m.to) ?? "a new name"}”.`, kind: "org" };
+    case "account.password_changed":
+      return { text: `${who} changed their password.`, kind: "auth" };
+    case "account.password_reset":
+      return { text: `${who} reset their password with an email link.`, kind: "auth" };
+    case "account.profile_updated":
+      return { text: `${who} updated their profile.`, kind: "auth" };
     case "case.created":
       return { text: `${who} opened case room${quoted}.`, kind: "case" };
     case "case.status_changed":

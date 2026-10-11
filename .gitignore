@@ -30,3 +30,6 @@ playwright-report/
 *.log
 coverage/
 .vercel
+
+# Emails written by EMAIL_TRANSPORT=file without EMAIL_OUTBOX_DIR
+email-outbox/

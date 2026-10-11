@@ -104,3 +104,36 @@ export function consumeAccountCreation(kind: "signup" | "invite", headers: Heade
   const wait = namedLimiter(`account-${kind}`, limit, HOUR).consume(address);
   return wait ? `Too many attempts from this network. Try again in ${retryText(wait)}.` : null;
 }
+
+/**
+ * Emails sent on request (signup confirmation, password reset): per client
+ * address and per recipient, so the forms cannot be used to flood an inbox.
+ * The same limits apply whether or not the address has an account.
+ */
+export function consumeEmailRequest(kind: "signup" | "password-reset", email: string, headers: Headers): string | null {
+  const address = clientAddress(headers);
+  if (address) {
+    const wait = namedLimiter(`email-${kind}-address`, envLimit("EMAIL_REQUESTS_PER_IP_PER_HOUR", 10), HOUR).consume(address);
+    if (wait) return `Too many attempts from this network. Try again in ${retryText(wait)}.`;
+  }
+  const wait = namedLimiter(`email-${kind}-recipient`, envLimit("EMAIL_REQUESTS_PER_RECIPIENT_PER_HOUR", 3), HOUR).consume(email.trim().toLowerCase());
+  return wait ? `Too many emails were requested for this address. Try again in ${retryText(wait)}.` : null;
+}
+
+/** Current-password checks when changing a password, per account (stolen sessions cannot guess it quickly). */
+export function consumePasswordCheck(identityId: string): string | null {
+  const wait = namedLimiter("password-check", envLimit("PASSWORD_CHECKS_PER_ACCOUNT", 5), FIFTEEN_MINUTES).consume(identityId);
+  return wait ? `Too many attempts. Try again in ${retryText(wait)}.` : null;
+}
+
+/**
+ * Submissions of emailed links (password reset, signup confirmation) per
+ * client address. Invalid links are rejected before any password hashing, and
+ * each link is processed once at a time; this caps the rest per network.
+ */
+export function consumeLinkCompletion(headers: Headers): string | null {
+  const address = clientAddress(headers);
+  if (!address) return null;
+  const wait = namedLimiter("link-completion", envLimit("LINK_COMPLETIONS_PER_IP_PER_HOUR", 20), HOUR).consume(address);
+  return wait ? `Too many attempts from this network. Try again in ${retryText(wait)}.` : null;
+}

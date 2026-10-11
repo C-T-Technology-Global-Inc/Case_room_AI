@@ -34,10 +34,12 @@ Set these in the container environment. Never bake them into an image.
 |---|---|---|
 | `DATABASE_URL` | yes | PostgreSQL 16. Must allow a **session** connection: the app keeps one `LISTEN` connection per process for realtime. A transaction-mode pooler in front breaks cross-process realtime (each process then only sees its own events). |
 | `AUTH_SECRET` | yes | Long random string (`openssl rand -base64 32`). Readiness fails without it. Same value on every replica. |
-| `APP_URL`, `AUTH_URL` | yes | Public HTTPS URL of the app (invitation links, Auth.js). |
+| `APP_URL`, `AUTH_URL` | yes | Public HTTPS URL of the app (Auth.js, and every link sent by email). Email links are never built from the request's `Host` header, so without `APP_URL` no account email is sent. |
+| `SMTP_URL`, `EMAIL_FROM` | recommended | Any SMTP service (Amazon SES, Resend, Postmark, Mailgun, a hospital mail server): `smtps://user:password@host:465` or `smtp://…:587`. Needed for public signup (the address is confirmed before anything is created), "forgot password", password-change notices and emailed invitations. Without it, signup and password reset are unavailable and admins share invitation links by hand. `EMAIL_FROM` must be an address the service may send from. |
+| `EMAIL_TRANSPORT` | optional | `log` prints emails, with their links, to the server log instead of sending them: only for a private pilot whose logs are protected like the database. |
 | `SOURCE_CODE_URL` | yes for modified versions | Repository of the exact code you run. The AGPL-3.0 requires offering it to users; the app links to it on every screen. |
 | `DEMO_LOGIN` | set `"false"` | Hides the demo accounts on the sign-in page. Never seed a reachable deployment. |
-| `PUBLIC_SIGNUP` | review | `"false"` stops self-service creation of organizations (signup and "Create organization"). People can still join existing organizations by invitation. |
+| `PUBLIC_SIGNUP` | review | `"false"` stops self-service creation of organizations (signup and "Create organization"). People can still join existing organizations by invitation. For a closed pilot: create the first organization while it is `"true"`, then set it to `"false"`. |
 | `S3_BUCKET`, `S3_REGION`, `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_FORCE_PATH_STYLE` | recommended | Private bucket for uploaded originals. Without `S3_BUCKET`, files go to `STORAGE_DIR`. |
 | `S3_SERVER_SIDE_ENCRYPTION` | optional | `AES256` (default), `aws:kms`, or empty for S3-compatible services that reject the header. |
 | `STORAGE_DIR` | without S3 | Local directory for originals; `/data/storage` in the image. Mount a persistent, backed-up volume there. |
@@ -119,5 +121,7 @@ Back up both the database (`pg_dump` or the provider's point-in-time recovery) *
 - [ ] `SOURCE_CODE_URL` points to the code you run
 - [ ] S3 bucket (private) or a persistent, backed-up volume for originals
 - [ ] `PUBLIC_SIGNUP` and AI budgets reviewed; provider spending limits set if a paid key is used
+- [ ] `APP_URL` set; email configured (`SMTP_URL`, `EMAIL_FROM`) and a password reset tried end to end, or signup closed and admins briefed on sharing invitation links
+- [ ] Someone owns member access: when a person leaves, an admin deactivates them on the Team page
 - [ ] Database and storage backups configured and a restore rehearsed
 - [ ] `/api/ready` used by the load balancer; logs collected; someone receives alerts

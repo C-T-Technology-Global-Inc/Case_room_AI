@@ -2,6 +2,7 @@ import path from "node:path";
 import { defineConfig, devices } from "@playwright/test";
 import { config as loadEnv } from "dotenv";
 import { e2eDatabaseUrl } from "./tests/e2e/database";
+import { E2E_OUTBOX_DIR } from "./tests/e2e/outbox";
 
 /**
  * End-to-end tests: the production build against a dedicated database
@@ -44,6 +45,12 @@ export default defineConfig({
       AUTH_URL: baseURL,
       DEMO_LOGIN: "true",
       STORAGE_DIR: path.resolve(process.cwd(), "test-results/e2e-storage"),
+      // Account emails (signup confirmation, password reset, invitations) land in files the tests read.
+      EMAIL_TRANSPORT: "file",
+      EMAIL_OUTBOX_DIR: E2E_OUTBOX_DIR,
+      PUBLIC_SIGNUP: "true",
+      // Live connections re-check access at every heartbeat; keep it short so revocation tests are quick.
+      REALTIME_HEARTBEAT_MS: "1000",
     },
   },
 });

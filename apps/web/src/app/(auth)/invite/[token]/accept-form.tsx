@@ -5,6 +5,7 @@ import { Input } from "@ccr/ui/components/input";
 import { Label } from "@ccr/ui/components/label";
 import { Spinner } from "@ccr/ui/components/misc";
 import { useActionState, useState, useTransition } from "react";
+import { NewPasswordFields } from "@/components/auth/new-password-fields";
 import { acceptInviteAction, logoutAction, type FormState } from "@/server/actions/auth";
 import { joinOrganizationAction } from "@/server/actions/organizations";
 
@@ -17,10 +18,7 @@ export function AcceptInviteForm({ token }: { token: string }) {
         <Label htmlFor="name">Full name (as shown to your care team)</Label>
         <Input id="name" name="name" required placeholder="Dr. Jane Doe" autoComplete="name" />
       </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="password">Choose a password</Label>
-        <Input id="password" name="password" type="password" required minLength={8} autoComplete="new-password" />
-      </div>
+      <NewPasswordFields />
       {state.error && <p className="rounded-md border border-danger-border bg-danger-soft px-3 py-2 text-[13px] text-danger">{state.error}</p>}
       <Button type="submit" size="lg" className="w-full" disabled={pending}>
         {pending && <Spinner />}

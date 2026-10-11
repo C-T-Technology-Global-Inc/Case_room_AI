@@ -1,16 +1,34 @@
 "use client";
 
 import { Button } from "@ccr/ui/components/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@ccr/ui/components/dialog";
 import { Input } from "@ccr/ui/components/input";
 import { Label } from "@ccr/ui/components/label";
 import { Spinner } from "@ccr/ui/components/misc";
 import { NativeSelect } from "@ccr/ui/components/native-select";
 import { USER_ROLE_LABELS, USER_ROLES, type UserRole } from "@ccr/types";
-import { CopyIcon, MailPlusIcon, XIcon } from "lucide-react";
+import { CopyIcon, MailPlusIcon, SendIcon, UserCheckIcon, UserXIcon, XIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { changeMemberRoleAction, inviteMemberAction, revokeInvitationAction } from "@/server/actions/team";
+import {
+  changeMemberRoleAction,
+  deactivateMemberAction,
+  inviteMemberAction,
+  reactivateMemberAction,
+  resendInvitationAction,
+  revokeInvitationAction,
+} from "@/server/actions/team";
+
+/** Links built without APP_URL are relative; make them absolute for copying. */
+function absolute(link: string): string {
+  return new URL(link, window.location.origin).toString();
+}
+
+function copyLink(link: string) {
+  void navigator.clipboard.writeText(absolute(link));
+  toast.success("Link copied");
+}
 
 export function InviteForm({ organizationId }: { organizationId: string }) {
   const router = useRouter();
@@ -20,7 +38,7 @@ export function InviteForm({ organizationId }: { organizationId: string }) {
   const [role, setRole] = useState<UserRole>("SPECIALIST");
   const [specialty, setSpecialty] = useState("");
   const [title, setTitle] = useState("");
-  const [link, setLink] = useState<string | null>(null);
+  const [created, setCreated] = useState<{ link: string; email: string; emailed: boolean; problem: string | null } | null>(null);
   const [pending, startTransition] = useTransition();
 
   function submit(event: React.FormEvent) {
@@ -31,11 +49,12 @@ export function InviteForm({ organizationId }: { organizationId: string }) {
         toast.error(result.error);
         return;
       }
-      setLink(result.data.inviteUrl);
+      const { inviteUrl, delivery } = result.data;
+      setCreated({ link: inviteUrl, email, emailed: delivery.emailed, problem: delivery.emailed ? null : delivery.emailProblem });
       setEmail("");
       setSpecialty("");
       setTitle("");
-      toast.success("Invitation created");
+      toast.success(delivery.emailed ? `Invitation emailed to ${email}` : "Invitation created");
       router.refresh();
     });
   }
@@ -72,20 +91,16 @@ export function InviteForm({ organizationId }: { organizationId: string }) {
           Create invitation
         </Button>
       </div>
-      {link && (
+      {created && (
         <div className="space-y-1.5 rounded-lg border border-approved-border bg-approved-soft p-3">
-          <div className="text-xs font-medium text-approved">Invitation link (email delivery is not part of this MVP). Share it with the invitee:</div>
+          <div className="text-xs font-medium text-approved">
+            {created.emailed
+              ? `Invitation emailed to ${created.email}. You can also share the link yourself:`
+              : `${created.problem ?? "The invitation was not emailed."} Share this link with ${created.email}:`}
+          </div>
           <div className="flex gap-2">
-            <Input readOnly value={link} className="font-mono text-xs" onFocus={(e) => e.target.select()} />
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              onClick={() => {
-                void navigator.clipboard.writeText(link);
-                toast.success("Link copied");
-              }}
-            >
+            <Input readOnly value={created.link} className="font-mono text-xs" onFocus={(e) => e.target.select()} />
+            <Button type="button" variant="outline" size="icon" aria-label="Copy invitation link" onClick={() => copyLink(created.link)}>
               <CopyIcon />
             </Button>
           </div>
@@ -144,5 +159,95 @@ export function RoleSelect({ memberId, role, disabled }: { memberId: string; rol
         </option>
       ))}
     </NativeSelect>
+  );
+}
+
+/** Copy the link of a pending invitation, or send its email again. */
+export function InvitationLinkButtons({ link, invitationId, canEmail }: { link: string; invitationId: string; canEmail: boolean }) {
+  const [pending, startTransition] = useTransition();
+  return (
+    <>
+      <Button variant="ghost" size="xs" onClick={() => copyLink(link)}>
+        <CopyIcon />
+        Copy link
+      </Button>
+      {canEmail && (
+        <Button
+          variant="ghost"
+          size="xs"
+          disabled={pending}
+          onClick={() =>
+            startTransition(async () => {
+              const result = await resendInvitationAction(invitationId);
+              if (!result.ok) toast.error(result.error);
+              else toast.success("Invitation email sent again");
+            })
+          }
+        >
+          {pending ? <Spinner /> : <SendIcon />}
+          Resend
+        </Button>
+      )}
+    </>
+  );
+}
+
+/**
+ * Deactivate (after confirmation) or reactivate a member. Deactivation keeps
+ * everything the person wrote; they simply can no longer open the organization.
+ */
+export function MemberAccessButton({ memberId, name, deactivated }: { memberId: string; name: string; deactivated: boolean }) {
+  const router = useRouter();
+  const [confirming, setConfirming] = useState(false);
+  const [pending, startTransition] = useTransition();
+
+  function run(action: (id: string) => ReturnType<typeof deactivateMemberAction>, success: string) {
+    startTransition(async () => {
+      const result = await action(memberId);
+      if (!result.ok) toast.error(result.error);
+      else {
+        toast.success(success);
+        setConfirming(false);
+        router.refresh();
+      }
+    });
+  }
+
+  if (deactivated) {
+    return (
+      <Button variant="outline" size="xs" disabled={pending} onClick={() => run(reactivateMemberAction, `${name} can sign in to this organization again`)}>
+        {pending ? <Spinner /> : <UserCheckIcon />}
+        Reactivate
+      </Button>
+    );
+  }
+
+  return (
+    <>
+      <Button variant="ghost" size="xs" className="text-danger hover:text-danger" onClick={() => setConfirming(true)}>
+        <UserXIcon />
+        Deactivate
+      </Button>
+      <Dialog open={confirming} onOpenChange={(open) => !pending && setConfirming(open)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Deactivate {name}?</DialogTitle>
+            <DialogDescription>
+              {name} loses access to this organization and its patient cases at their next request; a case page they have open closes within about
+              20 seconds. Their messages, decisions and audit entries are kept. You can reactivate them later.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" disabled={pending} onClick={() => setConfirming(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" disabled={pending} onClick={() => run(deactivateMemberAction, `${name} was deactivated`)}>
+              {pending ? <Spinner /> : <UserXIcon />}
+              Deactivate
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

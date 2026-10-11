@@ -71,7 +71,7 @@ export async function postMessage(user: SessionUser, caseRoomId: string, rawCont
   const { content } = postMessageSchema.parse({ content: rawContent });
 
   const members = await prisma.caseRoomMember.findMany({
-    where: { caseRoomId },
+    where: { caseRoomId, user: { deactivatedAt: null } },
     include: { user: { select: { id: true, handle: true } } },
   });
   const mentions = parseMentions(content, members.map((m) => m.user));

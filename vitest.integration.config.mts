@@ -42,6 +42,6 @@ export default defineConfig({
     fileParallelism: false,
     testTimeout: 30_000,
     hookTimeout: 120_000,
-    env: { DATABASE_URL: url, AI_PROVIDER: "demo" },
+    env: { DATABASE_URL: url, AI_PROVIDER: "demo", EMAIL_TRANSPORT: "memory", APP_URL: "https://case-room.test", PUBLIC_SIGNUP: "true" },
   },
 });

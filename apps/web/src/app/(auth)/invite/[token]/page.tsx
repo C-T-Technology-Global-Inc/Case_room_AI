@@ -5,7 +5,8 @@ import { getSessionIdentityId } from "@/server/auth/session";
 import { describeInvitation } from "@/server/services/team";
 import { AcceptInviteForm, JoinOrganizationButton, SwitchAccountButton } from "./accept-form";
 
-export const metadata: Metadata = { title: "Join organization" };
+// The token is in the URL: do not send it to other sites in the Referer header.
+export const metadata: Metadata = { title: "Join organization", referrer: "no-referrer" };
 
 export default async function InvitePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
@@ -65,6 +66,15 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
       {view.state === "already-member" && (
         <div className="space-y-3 text-[13px] text-muted-foreground">
           <p>You are already a member of {organizationName}. Switch to it from the organization menu in the sidebar.</p>
+          <Link href="/dashboard" className="font-medium text-primary hover:underline">
+            Go to the dashboard
+          </Link>
+        </div>
+      )}
+
+      {view.state === "deactivated-member" && (
+        <div className="space-y-3 text-[13px] text-muted-foreground">
+          <p>Your access to {organizationName} was deactivated. Ask one of its admins to reactivate it; a new invitation is not needed.</p>
           <Link href="/dashboard" className="font-medium text-primary hover:underline">
             Go to the dashboard
           </Link>

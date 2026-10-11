@@ -12,6 +12,7 @@ import { formatDate } from "@/lib/format";
 import { requireUser } from "@/server/auth/session";
 import { can } from "@/server/authz/permissions";
 import { getAIProviderInfo } from "@/server/services/ai";
+import { ChangePasswordForm, ProfileForm, RenameOrganizationForm } from "./account-forms";
 
 export const metadata: Metadata = { title: "Settings" };
 
@@ -33,8 +34,9 @@ const GUARANTEES = [
   "The audit log is append-only and enforced by the database.",
 ];
 
-export default async function SettingsPage() {
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ password?: string }> }) {
   const user = await requireUser();
+  const { password } = await searchParams;
   const organization = await prisma.organization.findUniqueOrThrow({ where: { id: user.organizationId } });
   const ai = getAIProviderInfo();
   const config = resolveAIConfig();
@@ -42,14 +44,21 @@ export default async function SettingsPage() {
 
   return (
     <PageContainer className="max-w-4xl">
-      <PageHeader title="Settings" description="Organization, AI provider and safety configuration." />
+      <PageHeader title="Settings" description="Your profile and password, organization, AI provider and safety configuration." />
+      {password === "changed" && (
+        <p role="status" className="rounded-md border border-approved-border bg-approved-soft px-3 py-2 text-[13px] text-approved">
+          Your password was changed. Your other sessions were signed out.
+        </p>
+      )}
 
       <Card>
         <CardHeader>
           <CardTitle>Organization</CardTitle>
         </CardHeader>
         <CardContent className="divide-y">
-          <Row label="Name">{organization.name}</Row>
+          <Row label="Name">
+            {can(user, "org.manage") ? <RenameOrganizationForm organizationId={organization.id} name={organization.name} /> : organization.name}
+          </Row>
           <Row label="Created">{formatDate(organization.createdAt)}</Row>
           <Row label="Data">
             <Badge variant="outline">Synthetic demo data only</Badge>
@@ -70,15 +79,22 @@ export default async function SettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Your profile</CardTitle>
+          <CardDescription>
+            {user.email} · {USER_ROLE_LABELS[user.role]} in {user.organizationName} · <span className="font-mono">@{user.handle}</span>
+          </CardDescription>
         </CardHeader>
-        <CardContent className="divide-y">
-          <Row label="Name">{user.name}</Row>
-          <Row label="Email">{user.email}</Row>
-          <Row label="Role">{USER_ROLE_LABELS[user.role]}</Row>
-          <Row label="Specialty">{user.specialty ?? "·"}</Row>
-          <Row label="Mention handle">
-            <span className="font-mono text-xs">@{user.handle}</span>
-          </Row>
+        <CardContent>
+          <ProfileForm organizationId={user.organizationId} name={user.name} title={user.title} specialty={user.specialty} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Password</CardTitle>
+          <CardDescription>Changing your password signs out your other sessions, on every device.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ChangePasswordForm />
         </CardContent>
       </Card>
 

@@ -8,8 +8,9 @@ import { UserAvatar } from "@/components/shared/user-avatar";
 import { formatDate } from "@/lib/format";
 import { requireUser } from "@/server/auth/session";
 import { can } from "@/server/authz/permissions";
-import { listInvitations, listMembers } from "@/server/services/team";
-import { InviteForm, RevokeInvitationButton, RoleSelect } from "./team-admin";
+import { emailEnabled } from "@/server/email";
+import { invitationLink, listInvitations, listMembers } from "@/server/services/team";
+import { InvitationLinkButtons, InviteForm, MemberAccessButton, RevokeInvitationButton, RoleSelect } from "./team-admin";
 
 export const metadata: Metadata = { title: "Team" };
 
@@ -17,10 +18,12 @@ export default async function TeamPage() {
   const user = await requireUser();
   const isAdmin = can(user, "org.manage");
   const [members, invitations] = await Promise.all([listMembers(user), listInvitations(user)]);
+  const activeCount = members.filter((member) => !member.deactivatedAt).length;
+  const canEmail = emailEnabled();
 
   return (
     <PageContainer>
-      <PageHeader title="Team" description={`${members.length} member${members.length === 1 ? "" : "s"} of ${user.organizationName}. Access to each patient case is limited to its care team.`} />
+      <PageHeader title="Team" description={`${activeCount} active member${activeCount === 1 ? "" : "s"} of ${user.organizationName}. Access to each patient case is limited to its care team.`} />
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="overflow-x-auto rounded-xl border bg-card">
@@ -31,11 +34,12 @@ export default async function TeamPage() {
                 <th className="px-3 py-2.5">Role</th>
                 <th className="px-3 py-2.5 text-right">Cases</th>
                 <th className="px-4 py-2.5 text-right">Last active</th>
+                {isAdmin && <th className="px-4 py-2.5 text-right">Access</th>}
               </tr>
             </thead>
             <tbody className="divide-y">
               {members.map((member) => (
-                <tr key={member.id} className="hover:bg-accent/30">
+                <tr key={member.id} className={member.deactivatedAt ? "bg-muted/30 text-muted-foreground" : "hover:bg-accent/30"}>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-2.5">
                       <UserAvatar user={member} size="md" />
@@ -43,6 +47,11 @@ export default async function TeamPage() {
                         <div className="font-medium">
                           {member.name}
                           {member.id === user.id && <span className="font-normal text-muted-foreground"> (you)</span>}
+                          {member.deactivatedAt && (
+                            <Badge variant="outline" className="ml-2">
+                              Deactivated {formatDate(member.deactivatedAt)}
+                            </Badge>
+                          )}
                         </div>
                         <div className="truncate text-xs text-muted-foreground">
                           {member.title ?? member.specialty ?? "·"} · {member.email} · <span className="font-mono">@{member.handle}</span>
@@ -51,7 +60,7 @@ export default async function TeamPage() {
                     </div>
                   </td>
                   <td className="px-3 py-2.5">
-                    {isAdmin && member.id !== user.id ? (
+                    {isAdmin && member.id !== user.id && !member.deactivatedAt ? (
                       <RoleSelect memberId={member.id} role={member.role} />
                     ) : (
                       <Badge variant={member.role === "ORG_ADMIN" ? "solid" : "secondary"}>{USER_ROLE_LABELS[member.role]}</Badge>
@@ -61,6 +70,11 @@ export default async function TeamPage() {
                   <td className="px-4 py-2.5 text-right text-xs text-muted-foreground">
                     {member.lastLoginAt ? <TimeAgo date={member.lastLoginAt} /> : "Never"}
                   </td>
+                  {isAdmin && (
+                    <td className="px-4 py-2.5 text-right">
+                      {member.id !== user.id && <MemberAccessButton memberId={member.id} name={member.name} deactivated={Boolean(member.deactivatedAt)} />}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -72,7 +86,11 @@ export default async function TeamPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Invite a member</CardTitle>
-                <CardDescription>Creates a secure, expiring sign-up link for the invitee.</CardDescription>
+                <CardDescription>
+                  {canEmail
+                    ? "Emails the invitee a secure link that expires in 14 days."
+                    : "Creates a secure link that expires in 14 days. Email is not configured, so share the link yourself."}
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <InviteForm organizationId={user.organizationId} />
@@ -93,7 +111,10 @@ export default async function TeamPage() {
                         {invitation.specialty ? ` · ${invitation.specialty}` : ""} · expires {formatDate(invitation.expiresAt)}
                       </div>
                     </div>
-                    <RevokeInvitationButton invitationId={invitation.id} />
+                    <div className="flex shrink-0 items-center">
+                      <InvitationLinkButtons link={invitationLink(invitation.token)} invitationId={invitation.id} canEmail={canEmail} />
+                      <RevokeInvitationButton invitationId={invitation.id} />
+                    </div>
                   </div>
                 ))}
               </CardContent>

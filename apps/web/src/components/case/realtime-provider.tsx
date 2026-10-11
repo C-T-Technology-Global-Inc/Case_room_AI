@@ -159,6 +159,14 @@ export function CaseRealtimeProvider({
       emit(event);
     };
 
+    // The server ended the stream because access was withdrawn (member deactivated, password
+    // changed, removed from the case). Reload: the page then shows what this person may see now.
+    const onRevoked = () => {
+      disposed = true;
+      source?.close();
+      window.location.reload();
+    };
+
     function connect() {
       source?.close();
       source = new EventSource(`/api/cases/${caseId}/events`);
@@ -166,6 +174,7 @@ export function CaseRealtimeProvider({
       source.addEventListener("error", onError);
       source.addEventListener("ready", onReady);
       source.addEventListener("case", onCase);
+      source.addEventListener("revoked", onRevoked);
     }
     connect();
 

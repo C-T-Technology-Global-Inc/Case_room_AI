@@ -54,8 +54,11 @@ export async function createTask(user: SessionUser, caseRoomId: string, raw: Tas
   await assertCaseAccess(user, caseRoomId);
   const input = taskInputSchema.parse(raw);
   if (input.assigneeId) {
-    const member = await prisma.caseRoomMember.findUnique({ where: { caseRoomId_userId: { caseRoomId, userId: input.assigneeId } } });
-    if (!member) throw new ValidationError("The assignee must be on this case's care team.");
+    const member = await prisma.caseRoomMember.findUnique({
+      where: { caseRoomId_userId: { caseRoomId, userId: input.assigneeId } },
+      select: { user: { select: { deactivatedAt: true } } },
+    });
+    if (!member || member.user.deactivatedAt) throw new ValidationError("The assignee must be an active member of this case's care team.");
   }
   if (input.sourceMessageId) {
     const message = await prisma.message.findFirst({ where: { id: input.sourceMessageId, caseRoomId } });

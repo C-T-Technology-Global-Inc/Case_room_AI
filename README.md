@@ -21,6 +21,7 @@ Clinical Case Room is open source under the [GNU AGPL-3.0](LICENSE). Contributio
 | **Evidence first** | Every AI statement cites source records; fabricated citations are dropped and quotes are verified verbatim. |
 | **Human in the loop** | Decisions need approval from every requested reviewer; briefs and handoffs are drafts until a clinician approves them. |
 | **Auditability** | Every upload, AI action, decision, approval and task change is recorded in an append-only audit log. |
+| **Organizations and accounts** | One account in several organizations, roles per organization, emailed invitations, signup confirmed by email, password reset and change (ends other sessions), and deactivating members without losing their history. |
 
 | Team discussion with evidence-grounded AI | Human approval of a proposed decision |
 |---|---|
