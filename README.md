@@ -18,7 +18,7 @@ Clinical Case Room is open source under the [GNU AGPL-3.0](LICENSE). Contributio
 | **Shared patient memory** | Structured memory (problems, diagnoses, labs, imaging, pathology, treatments, open questions) updated automatically as documents arrive. |
 | **Multiplayer** | Real-time discussion with presence, typing indicators, mentions (`@DrSmith`) and live updates across browsers. |
 | **AI for the whole team** | `@AI` answers any care-team member from the authorized case record, visible to everyone. |
-| **Evidence first** | Every AI statement cites source records; fabricated citations are dropped and quotes are verified verbatim. |
+| **Evidence first** | AI drafts cite the case records they draw on. Citations that match no record are removed, quoted excerpts are shown only when found verbatim in the source, and answers without a verifiable source are marked low confidence. Clinicians verify every draft. |
 | **Human in the loop** | Decisions need approval from every requested reviewer; briefs and handoffs are drafts until a clinician approves them. |
 | **Auditability** | Every upload, AI action, decision, approval and task change is recorded in an append-only audit log. |
 | **Organizations and accounts** | One account in several organizations, roles per organization, emailed invitations, signup confirmed by email, password reset and change (ends other sessions), and deactivating members without losing their history. |
@@ -118,17 +118,35 @@ Next.js 16 (App Router, server actions, Turbopack) · React 19 · TypeScript · 
 - Persistent notice on every screen: *AI-generated content must be reviewed by a qualified healthcare professional.*
 - AI output is labeled **AI Generated**; drafts are labeled **Draft**; human sign-off is labeled **Human Approved**.
 - There is no code path through which the AI can approve a decision, brief or handoff. Approvals are created only by authenticated clinicians with the right role.
-- The AI does not diagnose, prescribe, select treatments or triage. Follow-up task suggestions never include medication orders and require human confirmation.
-- Content in documents and messages is treated as data, not instructions (prompt-injection guard).
+- The AI is instructed not to diagnose, prescribe, select treatments or triage, and not to suggest medication orders. These are instructions to the model, not guarantees; what the code enforces is that AI suggestions (including follow-up tasks) take effect only after a human confirms them.
+- The model is instructed to treat content in documents and messages as data, not instructions. This reduces prompt-injection risk but cannot eliminate it, which is one more reason every draft is reviewed.
+- Citations are checked by the application: references to unknown records are removed, quoted excerpts are kept only when found verbatim, and answers with no verifiable source are marked low confidence. A valid citation shows where a statement came from; it does not prove the statement is clinically correct.
 - The audit log is append-only; the database rejects `UPDATE` and `DELETE` on audit rows.
 
 More detail in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Tested configurations and known limitations
+
+What has actually been exercised, so nobody mistakes "implemented" for "verified":
+
+| Area | Verified | Not verified yet |
+|---|---|---|
+| Runtime | Node 22 on Linux (CI), Node 26 on macOS (development); PostgreSQL 16 | Other Node or PostgreSQL versions |
+| Browsers | Chromium, through the Playwright end-to-end suite | Safari, Firefox, mobile browsers |
+| Container | Image build and smoke test (sign-in, upload, stored original) in CI on Linux | Orchestrators (Kubernetes, ECS), several instances behind a load balancer |
+| AI | The offline demo engine, end to end. The Anthropic and OpenAI adapters with mocked SDK responses (structured output, refusals, truncation, retries) | **Live calls to Anthropic or OpenAI**: answer quality, latency and cost with a real model |
+| Email | Test transports; SMTP through nodemailer against a local SMTP server | A real mail provider (deliverability, spam filtering, provider limits) |
+| File storage | Local disk (unit, end-to-end, container smoke) | A real S3 bucket (the S3 code path is covered only by unit tests) |
+| Scale | One app process | Rate limits are kept per process; several instances need a shared limiter |
+
+The bundled data is synthetic. Running with real patient information requires the legal, security and contractual work described in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md); this repository does not provide it.
 
 ## Docker and deployment
 
 - Development: `docker compose up -d postgres` starts PostgreSQL (`docker compose up -d` adds MinIO for S3-compatible storage; set `S3_*` in `.env` to use it). The app runs with `npm run dev`.
 - Everything in containers: `AUTH_SECRET=$(openssl rand -base64 32) docker compose --profile app up -d --build`, then `docker compose --profile demo run --rm seed` for the synthetic demo data.
 - Deploying for others to use: read [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) (images, configuration, release steps, reverse proxy, backups, checklist).
+- Putting the synthetic demo online behind a password: [docs/DEPLOY_DEMO.md](docs/DEPLOY_DEMO.md) (one server with HTTPS, database on Supabase).
 
 ## Out of scope for this MVP
 

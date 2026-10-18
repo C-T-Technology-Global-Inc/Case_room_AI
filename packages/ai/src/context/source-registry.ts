@@ -1,4 +1,4 @@
-import type { CaseContext, DocumentType, SourceKind, SourceRef } from "@ccr/types";
+import type { CaseContext, ContextMessage, DocumentType, SourceKind, SourceRef } from "@ccr/types";
 import { DOCUMENT_TYPE_LABELS } from "@ccr/types";
 
 /**
@@ -21,6 +21,20 @@ export interface RegistryEntry {
   documentType: DocumentType | null;
   /** Text used to verify quoted excerpts. */
   text: string;
+  /**
+   * False for records that are not evidence: questions put to the assistant,
+   * its own earlier answers and system notices. They stay readable as context,
+   * but a citation of them is removed like an unknown key.
+   */
+  citable: boolean;
+}
+
+/**
+ * A discussion message that can support a statement: something a team member
+ * said, not a question to @AI (the question itself is no evidence of its answer).
+ */
+export function isTeamStatement(message: Pick<ContextMessage, "type" | "content">): boolean {
+  return message.type === "USER" && !/@ai\b/i.test(message.content);
 }
 
 export interface ResolvedCitations {
@@ -100,13 +114,15 @@ export class SourceRegistry {
         date: message.createdAt.slice(0, 10),
         documentType: null,
         text: message.content,
+        citable: isTeamStatement(message),
       }),
     );
   }
 
-  private add(entry: RegistryEntry) {
-    this.byKey.set(entry.key, entry);
-    this.byId.set(entry.id, entry);
+  private add(entry: Omit<RegistryEntry, "citable"> & { citable?: boolean }) {
+    const complete: RegistryEntry = { ...entry, citable: entry.citable ?? true };
+    this.byKey.set(complete.key, complete);
+    this.byId.set(complete.id, complete);
   }
 
   get(key: string): RegistryEntry | undefined {
@@ -129,12 +145,13 @@ export class SourceRegistry {
   /** Build a SourceRef for a known record id (used by non-LLM code paths). */
   refForId(id: string, excerpt?: string | null): SourceRef | null {
     const entry = this.byId.get(id);
-    if (!entry) return null;
+    if (!entry?.citable) return null;
     return this.toRef(entry, excerpt ?? null);
   }
 
   /**
-   * Resolve model-provided citations. Unknown keys are dropped. Duplicate keys
+   * Resolve model-provided citations. Unknown keys, and records that are not
+   * evidence (questions to the assistant, its own answers), are dropped. Duplicate keys
    * are merged (keeping the first verified excerpt). Quotes that cannot be
    * found verbatim in the source are discarded rather than shown.
    */
@@ -144,7 +161,7 @@ export class SourceRegistry {
 
     for (const citation of citations) {
       const entry = this.get(citation.sourceKey);
-      if (!entry) {
+      if (!entry?.citable) {
         dropped += 1;
         continue;
       }

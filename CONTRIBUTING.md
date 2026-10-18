@@ -62,6 +62,20 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
+What the suite covers (`tests/e2e/`):
+
+| Spec | What it proves |
+|---|---|
+| `demo-journey` | The five-minute demo in [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md), step by step in two browsers. It reloads the seed first. |
+| `ui-pages` | Every page renders for a doctor, a nurse, a coordinator and an admin (heading, no page or console errors, no 5xx); signed-out visitors reach only public pages; pages fit a 1280-pixel screen. |
+| `discussion-ai`, `realtime` | Live discussion and @AI answers; reconnection and resync after dropped streams. |
+| `decisions`, `briefs` | Human approval of decisions, tumor board briefs and handoffs, including stale-version protection. |
+| `documents` | Pasted and PDF uploads processed into timeline and memory; byte-exact original download; unreadable files refused. |
+| `cases`, `tasks` | Creating a case with its care team, search, status, inviting a specialist, timeline events; assigning and completing tasks. |
+| `access`, `accounts`, `organizations`, `settings` | Case access and 404s, signup by email, password reset and change, deactivation, switching and creating organizations, invitations, roles, profile, organization name. |
+
+A spec that changes shared demo data (roles, names, the organization a clinician last used) restores it. Use `reseedDemoData()` when a spec needs the untouched seed.
+
 When a test fails, `npx playwright show-trace test-results/<test>/trace.zip` replays it step by step. Tests must wait for visible state (`expect(...).toBeVisible()`), never for a fixed time; there are no automatic retries, so a flaky test fails the build.
 
 ## Writing code

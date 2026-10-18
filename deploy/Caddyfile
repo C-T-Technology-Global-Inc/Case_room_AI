@@ -1,0 +1,21 @@
+# Reverse proxy for the online demo (docs/DEPLOY_DEMO.md).
+# Caddy obtains and renews the HTTPS certificate for DEMO_DOMAIN by itself.
+# It replaces any X-Forwarded-For sent by clients with the real client address,
+# which the app's per-address limits rely on.
+
+{$DEMO_DOMAIN} {
+	# Shared password for the whole demo: strangers cannot reach it, or upload files.
+	basic_auth {
+		{$DEMO_USER} {$DEMO_PASSWORD_HASH}
+	}
+
+	# Document uploads are limited to 10 MB by the app.
+	request_body {
+		max_size 12MB
+	}
+
+	reverse_proxy web:3000 {
+		# Live updates are Server-Sent Events: pass each event on immediately.
+		flush_interval -1
+	}
+}

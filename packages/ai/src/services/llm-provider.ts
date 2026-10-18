@@ -177,7 +177,9 @@ export class LLMCaseAIProvider implements CaseAIProvider {
         limitations.push("No verifiable source in the case record was cited for this answer.");
       }
       if (dropped > 0) {
-        limitations.push(`${dropped} citation${dropped === 1 ? "" : "s"} that did not match a case record ${dropped === 1 ? "was" : "were"} removed.`);
+        limitations.push(
+          `${dropped} citation${dropped === 1 ? "" : "s"} that did not point to evidence in the case record ${dropped === 1 ? "was" : "were"} removed.`,
+        );
       }
 
       return {

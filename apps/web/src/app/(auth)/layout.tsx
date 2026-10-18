@@ -4,7 +4,7 @@ import { LogoMark } from "@/components/layout/logo";
 const PRINCIPLES = [
   { icon: UsersIcon, title: "Multiplayer by design", text: "Oncologists, surgeons, radiologists, pathologists and nurses work in one shared patient case." },
   { icon: SparklesIcon, title: "AI for the whole team", text: "One assistant with the full authorized case context, answering anyone on the care team." },
-  { icon: FileSearchIcon, title: "Evidence first", text: "Every AI statement links back to the source record. Unverifiable citations are dropped." },
+  { icon: FileSearchIcon, title: "Evidence first", text: "AI drafts cite the case records they draw on. Citations that match no record are removed; clinicians verify every draft." },
   { icon: ShieldCheckIcon, title: "Humans decide", text: "AI proposes. Clinical decisions become final only after human review and approval." },
 ];
 

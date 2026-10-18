@@ -1,8 +1,8 @@
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import { AIConfigurationError, AIOutputError, AIProviderError, AIRefusalError } from "../errors";
-import type { LLMClient, StructuredRequest, StructuredResponse } from "./llm-client";
-import { parseStructuredJson } from "./structured";
+import { DEFAULT_MAX_OUTPUT_TOKENS, type LLMClient, type StructuredRequest, type StructuredResponse, type ResponseBilling } from "./llm-client";
+import { parseStructuredJson, withBilling } from "./structured";
 
 export const DEFAULT_OPENAI_MODEL = "gpt-5";
 
@@ -40,26 +40,14 @@ export class OpenAILLMClient implements LLMClient {
         model: this.model,
         instructions: request.system,
         input,
-        max_output_tokens: request.maxOutputTokens ?? 16000,
+        max_output_tokens: request.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
         text: { format: zodTextFormat(request.schema, request.schemaName) },
       });
     } catch (error) {
       throw mapOpenAIError(error);
     }
 
-    const refusal = response.output
-      .flatMap((item) => (item.type === "message" ? item.content : []))
-      .find((part) => part.type === "refusal");
-    if (refusal) throw new AIRefusalError(refusal.refusal);
-
-    if (response.status === "incomplete") {
-      throw new AIOutputError(
-        `OpenAI response incomplete (${response.incomplete_details?.reason ?? "unknown"}) for task ${request.task}`,
-      );
-    }
-
-    return {
-      data: parseStructuredJson(response.output_text, request.schema, request.task),
+    const billing: ResponseBilling = {
       model: response.model,
       usage: {
         inputTokens: response.usage?.input_tokens,
@@ -67,6 +55,19 @@ export class OpenAILLMClient implements LLMClient {
         cacheReadTokens: response.usage?.input_tokens_details?.cached_tokens,
       },
     };
+    return withBilling(billing, () => {
+      const refusal = response.output
+        .flatMap((item) => (item.type === "message" ? item.content : []))
+        .find((part) => part.type === "refusal");
+      if (refusal) throw new AIRefusalError(refusal.refusal);
+
+      if (response.status === "incomplete") {
+        throw new AIOutputError(
+          `OpenAI response incomplete (${response.incomplete_details?.reason ?? "unknown"}) for task ${request.task}`,
+        );
+      }
+      return { data: parseStructuredJson(response.output_text, request.schema, request.task), ...billing };
+    });
   }
 }
 

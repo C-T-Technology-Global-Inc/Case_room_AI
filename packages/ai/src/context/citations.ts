@@ -10,7 +10,8 @@ const GROUP = new RegExp(String.raw`[\[(]\s*(?:sources?:?\s*)?(${KEY}(?:\s*[,;/]
  * renders as clickable evidence chips. Only bracketed keys are recognized:
  * bare tokens like "D3" are ambiguous in clinical text (vitamin D3).
  *
- * Keys that do not exist in the registry are removed and counted as dropped.
+ * Keys that do not exist in the registry, or that point to records that are not
+ * evidence, are removed and counted as dropped.
  * Valid keys that the model cited inline but not in its citation list are
  * appended to the sources.
  */
@@ -26,7 +27,8 @@ export function numberInlineCitations(
     const markers: string[] = [];
     for (const rawKey of group.split(/[,;/]/)) {
       const entry = registry.get(rawKey);
-      if (!entry) {
+      // Unknown keys and records that are not evidence (questions to @AI, AI answers, system notices).
+      if (!entry?.citable) {
         dropped += 1;
         continue;
       }

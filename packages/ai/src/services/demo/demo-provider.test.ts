@@ -35,6 +35,15 @@ describe("DemoCaseAIProvider", () => {
     expect(output.answer).toMatch(/12\.9 .* → 10\.1/);
   });
 
+  it("does not treat the question being answered as evidence", async () => {
+    const ctx = syntheticCase();
+    const question = "@AI what did the liver transplant evaluation conclude?";
+    ctx.messages.push({ id: "m-question", type: "USER", author: "Dr. Oncologist", authorSpecialty: null, content: question, createdAt: "2026-09-08T07:59:00.000Z" });
+    const { output } = await ai.answerCaseQuestion(ctx, { text: "what did the liver transplant evaluation conclude?", requester: null });
+    expect(output.confidence).toBe("insufficient");
+    expect(output.sources).toHaveLength(0);
+  });
+
   it("says so when the record cannot answer", async () => {
     const { output } = await ai.answerCaseQuestion(syntheticCase(), { text: "What did the liver transplant evaluation conclude?", requester: null });
     expect(output.confidence).toBe("insufficient");

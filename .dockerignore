@@ -9,11 +9,12 @@
 **/*.tsbuildinfo
 .DS_Store
 
-# Secrets and local configuration
-.env
-.env.*
+# Secrets and local configuration (at any depth: deploy/.env holds the demo server's secrets)
+**/.env
+**/.env.*
 !.env.example
 apps/web/.env
+deploy
 
 # Uploaded originals and other runtime data
 .storage

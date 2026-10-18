@@ -20,6 +20,41 @@ describe("SourceRegistry (source grounding)", () => {
     expect(dropped).toBe(2);
   });
 
+  it("does not accept questions to the assistant, or its own answers, as evidence", () => {
+    const ctx = syntheticCase();
+    ctx.messages.push(
+      { id: "m2", type: "USER", author: "Dr. Oncologist", authorSpecialty: null, content: "@AI what did the liver transplant evaluation conclude?", createdAt: "2026-09-07T09:00:00.000Z" },
+      { id: "m3", type: "AI", author: "AI case assistant", authorSpecialty: null, content: "The transplant evaluation concluded...", createdAt: "2026-09-07T09:01:00.000Z" },
+      { id: "m4", type: "SYSTEM", author: "System", authorSpecialty: null, content: "Dr. Surgeon joined the care team.", createdAt: "2026-09-07T09:02:00.000Z" },
+    );
+    const withQuestions = new SourceRegistry(ctx);
+    const { sources, dropped } = withQuestions.resolve([{ sourceKey: "M1" }, { sourceKey: "M2" }, { sourceKey: "M3" }, { sourceKey: "M4" }]);
+    expect(sources.map((s) => s.id)).toEqual(["m1"]); // what a team member said
+    expect(dropped).toBe(3);
+    expect(withQuestions.refForId("m2")).toBeNull();
+  });
+
+  it("counts inline citations of questions, AI answers and system notices as removed", () => {
+    const ctx = syntheticCase();
+    ctx.messages.push(
+      { id: "m2", type: "USER", author: "Dr. Oncologist", authorSpecialty: null, content: "@AI was the transplant approved?", createdAt: "2026-09-07T09:00:00.000Z" },
+      { id: "m3", type: "AI", author: "AI case assistant", authorSpecialty: null, content: "It was approved.", createdAt: "2026-09-07T09:01:00.000Z" },
+      { id: "m4", type: "SYSTEM", author: "System", authorSpecialty: null, content: "Dr. Surgeon joined.", createdAt: "2026-09-07T09:02:00.000Z" },
+    );
+    const withQuestions = new SourceRegistry(ctx);
+    for (const key of ["M2", "M3", "M4"]) {
+      const { text, sources, dropped } = numberInlineCitations(`The transplant was approved [${key}].`, withQuestions, []);
+      expect(text).toBe("The transplant was approved.");
+      expect(sources).toEqual([]);
+      expect(dropped).toBe(1);
+    }
+    // Mixed: the team statement stays, the question is removed and counted.
+    const mixed = numberInlineCitations("Tumor board is on Oct 2 [M1, M2].", withQuestions, []);
+    expect(mixed.sources.map((s) => s.id)).toEqual(["m1"]);
+    expect(mixed.text).toBe("Tumor board is on Oct 2 [1].");
+    expect(mixed.dropped).toBe(1);
+  });
+
   it("keeps only quotes that appear verbatim in the source", () => {
     const { sources } = registry.resolve([
       { sourceKey: "D3", quote: "Invasive adenocarcinoma, moderately differentiated" },

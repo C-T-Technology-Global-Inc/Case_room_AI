@@ -1,6 +1,6 @@
 import type { AIConfidence, CaseContext, ContextDocument } from "@ccr/types";
 import { APPROVAL_STATUS_LABELS, DECISION_STATUS_LABELS } from "@ccr/types";
-import type { SourceRegistry } from "../../context/source-registry";
+import { isTeamStatement, type SourceRegistry } from "../../context/source-registry";
 import { retrievePassages } from "../../retrieval/passages";
 import { BM25Index } from "../../retrieval/bm25";
 import { tokenize } from "../../retrieval/tokenize";
@@ -146,7 +146,8 @@ function bestSentences(ctx: CaseContext, query: string, limit: number): Hit[] {
     const doc = ctx.documents.find((d) => d.id === item.documentId);
     if (doc) consider(doc.id, doc.title, doc.date, item.text, score);
   }
-  const discussion = ctx.messages.filter((m) => m.type === "USER");
+  // Only what team members said is evidence; questions to @AI (including the one being answered) are not.
+  const discussion = ctx.messages.filter(isTeamStatement);
   const index = new BM25Index(discussion.map((message) => ({ item: message, text: message.content })));
   for (const { item, score } of index.search(query, 4)) {
     consider(item.id, `Discussion: ${item.author}`, item.createdAt.slice(0, 10), item.content, score);

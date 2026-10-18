@@ -38,10 +38,24 @@ export interface StructuredRequest<T> {
   effort?: ReasoningEffort;
 }
 
+/** Output cap (tokens, including reasoning) when a request does not set `maxOutputTokens`. */
+export const DEFAULT_MAX_OUTPUT_TOKENS = 16_000;
+
 export interface LLMUsage {
+  /** Uncached input tokens (Anthropic reports cache reads and writes separately). */
   inputTokens?: number;
+  /** Output tokens, including reasoning/thinking tokens (billed as output). */
   outputTokens?: number;
   cacheReadTokens?: number;
+  /** Tokens written to the prompt cache (billed above the normal input price). */
+  cacheWriteTokens?: number;
+}
+
+/** What a completed provider response used, whether or not its output was accepted. */
+export interface ResponseBilling {
+  /** Model that actually served the request. */
+  model: string;
+  usage: LLMUsage;
 }
 
 export interface StructuredResponse<T> {

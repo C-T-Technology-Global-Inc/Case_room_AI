@@ -135,11 +135,12 @@ export function RevokeInvitationButton({ invitationId }: { invitationId: string 
   );
 }
 
-export function RoleSelect({ memberId, role, disabled }: { memberId: string; role: UserRole; disabled?: boolean }) {
+export function RoleSelect({ memberId, memberName, role, disabled }: { memberId: string; memberName: string; role: UserRole; disabled?: boolean }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   return (
     <NativeSelect
+      aria-label={`Role of ${memberName}`}
       value={role}
       disabled={disabled || pending}
       className="h-8 w-40 text-xs"

@@ -26,8 +26,29 @@ const request: StructuredRequest<z.infer<typeof schema>> = {
 function stubFetch(body: unknown, captured: { body?: Record<string, unknown> } = {}) {
   return async (_url: unknown, init?: { body?: unknown }) => {
     if (typeof init?.body === "string") captured.body = JSON.parse(init.body) as Record<string, unknown>;
+    if (captured.body?.stream === true) {
+      return new Response(anthropicEvents(body as AnthropicTestMessage), { status: 200, headers: { "content-type": "text/event-stream" } });
+    }
     return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
   };
+}
+
+type AnthropicTestMessage = ReturnType<typeof anthropicMessage>;
+
+/** The server-sent events the Messages API streams for a complete message. */
+function anthropicEvents(message: AnthropicTestMessage & { stop_details?: unknown }): string {
+  const { content, stop_reason, stop_sequence, stop_details, usage, ...rest } = message;
+  const events: Array<Record<string, unknown>> = [
+    { type: "message_start", message: { ...rest, content: [], stop_reason: null, stop_sequence: null, usage: { ...usage, output_tokens: 0 } } },
+    ...content.flatMap((block, index) => [
+      { type: "content_block_start", index, content_block: { type: "text", text: "" } },
+      { type: "content_block_delta", index, delta: { type: "text_delta", text: block.text } },
+      { type: "content_block_stop", index },
+    ]),
+    { type: "message_delta", delta: { stop_reason, stop_sequence, stop_details: stop_details ?? null }, usage: { output_tokens: usage.output_tokens } },
+    { type: "message_stop" },
+  ];
+  return events.map((event) => `event: ${String(event.type)}\ndata: ${JSON.stringify(event)}\n\n`).join("");
 }
 
 function anthropicMessage(stopReason: string, text: string, extra: Record<string, unknown> = {}) {
@@ -61,6 +82,41 @@ describe("AnthropicLLMClient", () => {
     expect(content).toHaveLength(2); // empty context block dropped
     expect(content[0]!.cache_control).toEqual({ type: "ephemeral" });
     expect(content.at(-1)!.text).toBe("Answer the question.");
+  });
+
+  it("reports token usage, including prompt-cache reads and writes (billed differently)", async () => {
+    const llm = anthropicClient(
+      anthropicMessage("end_turn", '{"answer":"ok","confidence":"high"}', {
+        usage: { input_tokens: 120, output_tokens: 40, cache_read_input_tokens: 900, cache_creation_input_tokens: 300 },
+      }),
+    );
+    const result = await llm.generateStructured(request);
+    expect(result.usage).toEqual({ inputTokens: 120, outputTokens: 40, cacheReadTokens: 900, cacheWriteTokens: 300 });
+  });
+
+  it("keeps the billed usage on responses it rejects (truncated, malformed)", async () => {
+    const usage = { input_tokens: 1000, output_tokens: 16000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
+    const truncated = anthropicClient(anthropicMessage("max_tokens", '{"answer":"cut', { usage }));
+    const malformed = anthropicClient(anthropicMessage("end_turn", "not json", { usage }));
+    for (const llm of [truncated, malformed]) {
+      const error = await llm.generateStructured(request).then(
+        () => null,
+        (failure: unknown) => failure,
+      );
+      expect(error).toBeInstanceOf(AIOutputError);
+      expect((error as AIOutputError).billing).toEqual({
+        model: "claude-opus-5-5",
+        usage: { inputTokens: 1000, outputTokens: 16000, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      });
+    }
+  });
+
+  it("accepts a large output cap such as the tumor board brief's 24,000 tokens (streamed, not refused by the SDK)", async () => {
+    const captured: { body?: Record<string, unknown> } = {};
+    const llm = anthropicClient(anthropicMessage("end_turn", '{"answer":"ok","confidence":"high"}'), captured);
+    await expect(llm.generateStructured({ ...request, maxOutputTokens: 24_000 })).resolves.toMatchObject({ data: { answer: "ok" } });
+    expect(captured.body?.max_tokens).toBe(24_000);
+    expect(captured.body?.stream).toBe(true);
   });
 
   it("reports a refusal as a refusal, even when the text is not JSON", async () => {
