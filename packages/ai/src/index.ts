@@ -12,7 +12,8 @@
 export { resolveAIConfig, type AIConfig } from "./config";
 export { AIError, AIConfigurationError, AIOutputError, AIProviderError, AIRefusalError, toUserMessage } from "./errors";
 
-export type { LLMClient, StructuredRequest, StructuredResponse, PromptBlock, ReasoningEffort } from "./providers/llm-client";
+export type { LLMClient, LLMUsage, ResponseBilling, StructuredRequest, StructuredResponse, PromptBlock, ReasoningEffort } from "./providers/llm-client";
+export { DEFAULT_MAX_OUTPUT_TOKENS } from "./providers/llm-client";
 export { AnthropicLLMClient, DEFAULT_ANTHROPIC_MODEL } from "./providers/anthropic";
 export { OpenAILLMClient, DEFAULT_OPENAI_MODEL } from "./providers/openai";
 

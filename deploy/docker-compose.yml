@@ -1,0 +1,87 @@
+# Clinical Case Room: online demo on one server, database on Supabase.
+# Step-by-step guide: docs/DEPLOY_DEMO.md. Run from this folder:
+#
+#   docker compose up -d --build     # migrations, then the app and the HTTPS proxy
+#   ./reset-demo.sh                  # load (or reload) the synthetic demo data
+#
+# Synthetic data only. The whole site is behind a shared password (Caddy), the
+# demo accounts are listed on the sign-in page, and public signup is off.
+
+name: case-room-demo
+
+x-app-environment: &app-environment
+  NODE_ENV: production
+  DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in deploy/.env}
+  AUTH_SECRET: ${AUTH_SECRET:?Set AUTH_SECRET in deploy/.env}
+  APP_URL: https://${DEMO_DOMAIN:?Set DEMO_DOMAIN in deploy/.env}
+  AUTH_URL: https://${DEMO_DOMAIN}
+  SOURCE_CODE_URL: ${SOURCE_CODE_URL:-}
+  # Offline demo AI: no provider key, no API cost.
+  AI_PROVIDER: demo
+  DEMO_LOGIN: "true"
+  PUBLIC_SIGNUP: "false"
+  EMAIL_TRANSPORT: ${EMAIL_TRANSPORT:-none}
+  SMTP_URL: ${SMTP_URL:-}
+  EMAIL_FROM: ${EMAIL_FROM:-}
+  STORAGE_DIR: /data/storage
+
+services:
+  # Release step: applies pending migrations, then exits. The app starts after it succeeds.
+  migrate:
+    build:
+      context: ..
+      target: migrate
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    volumes:
+      - ./certs:/certs:ro
+    restart: "no"
+
+  web:
+    build:
+      context: ..
+      target: runner
+    environment: *app-environment
+    volumes:
+      - storage:/data/storage
+      - ./certs:/certs:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    # No published port: only the proxy below reaches the app.
+
+  # HTTPS (Let's Encrypt certificates, renewed automatically) and the shared demo password.
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DEMO_DOMAIN: ${DEMO_DOMAIN}
+      DEMO_USER: ${DEMO_USER:?Set DEMO_USER in deploy/.env}
+      DEMO_PASSWORD_HASH: ${DEMO_PASSWORD_HASH:?Set DEMO_PASSWORD_HASH in deploy/.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - web
+    restart: unless-stopped
+
+  # Loads the synthetic demo data. ERASES the database first. Run with ./reset-demo.sh.
+  seed:
+    profiles: ["reset"]
+    build:
+      context: ..
+      target: seed
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    volumes:
+      - ./certs:/certs:ro
+
+volumes:
+  storage:
+  caddy-data:
+  caddy-config:

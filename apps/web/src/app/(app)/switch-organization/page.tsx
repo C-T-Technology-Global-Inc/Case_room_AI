@@ -20,7 +20,9 @@ export default async function SwitchOrganizationPage({ searchParams }: { searchP
     <PageContainer>
       <Card className="mx-auto mt-16 max-w-md">
         <CardHeader>
-          <CardTitle>Open in {target.name}?</CardTitle>
+          <CardTitle>
+            <h1>Open in {target.name}?</h1>
+          </CardTitle>
           <CardDescription>
             This page belongs to {target.name}, where you are {USER_ROLE_LABELS[target.role].toLowerCase()}. You are currently working in{" "}
             {user.organizationName}.

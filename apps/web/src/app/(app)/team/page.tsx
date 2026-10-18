@@ -61,7 +61,7 @@ export default async function TeamPage() {
                   </td>
                   <td className="px-3 py-2.5">
                     {isAdmin && member.id !== user.id && !member.deactivatedAt ? (
-                      <RoleSelect memberId={member.id} role={member.role} />
+                      <RoleSelect memberId={member.id} memberName={member.name} role={member.role} />
                     ) : (
                       <Badge variant={member.role === "ORG_ADMIN" ? "solid" : "secondary"}>{USER_ROLE_LABELS[member.role]}</Badge>
                     )}

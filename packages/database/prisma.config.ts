@@ -1,6 +1,7 @@
 import path from "node:path";
 import { config as loadEnv } from "dotenv";
 import { defineConfig, env } from "prisma/config";
+import { migrationUrl } from "./prisma/migration-url";
 
 // A single `.env` at the repository root is shared by the web app and this
 // package. Prisma commands run from `packages/database`, so look there first
@@ -17,6 +18,7 @@ export default defineConfig({
     seed: "tsx prisma/seed/index.ts",
   },
   datasource: {
-    url: env("DATABASE_URL"),
+    // Same database as the app, with its SSL options in Prisma's format.
+    url: migrationUrl(env("DATABASE_URL")),
   },
 });

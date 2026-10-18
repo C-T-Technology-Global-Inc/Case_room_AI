@@ -25,7 +25,7 @@ In Window A type `@AI compare the pathology with the latest CT` and press Enter.
 Window B shows *Dr. Nguyen is typing…*, then *AI is reviewing the case record…*, then the answer, at the same moment as Window A.
 
 **4. "AI helps the whole team, with evidence." (45 s)**
-Point at the answer: numbered citations, the **Sources** list, **confidence** and **limitations**. Hover a citation to show the verbatim excerpt. Ask a question the record cannot answer (for example `@AI what did the liver transplant evaluation conclude?`): the AI says the information is not in the record instead of inventing it.
+Point at the answer: numbered citations, the **Sources** list, **confidence** and **limitations**. Hover a citation to show the verbatim excerpt. Ask a question the record cannot answer (for example `@AI what did the liver transplant evaluation conclude?`): the AI should say the information is not in the record instead of inventing it (the offline engine always does; a live model is instructed to, so check the answer).
 
 **5. "This is the proposed decision." (45 s)** — Window A, *Decisions*.
 Decision #1, *Neoadjuvant chemotherapy before surgical re-evaluation*: rationale, sources, approvals 2 of 3 (radiology and pathology approved, surgery pending).

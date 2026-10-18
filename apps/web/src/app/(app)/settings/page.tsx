@@ -28,9 +28,9 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 const GUARANTEES = [
   "AI output is always labeled “AI Generated” and stored as a draft.",
   "Only authenticated clinicians can approve decisions, briefs and handoffs; no code path lets the AI approve.",
-  "AI answers cite records by key; citations that do not match a real record are removed, and quotes are verified verbatim.",
-  "The AI does not diagnose, prescribe, select treatments or triage; it summarizes, organizes and flags gaps.",
-  "Content inside documents and messages is treated as data, never as instructions (prompt-injection guard).",
+  "AI answers can cite records by key; citations that match no record are removed, quoted excerpts are shown only when found verbatim, and answers without a verifiable source are marked low confidence.",
+  "The AI is instructed not to diagnose, prescribe, select treatments or triage, only to summarize, organize and flag gaps; its suggestions take effect only after a clinician confirms them.",
+  "The AI is instructed to treat content inside documents and messages as data, never as instructions. This reduces prompt-injection risk; it cannot rule it out.",
   "The audit log is append-only and enforced by the database.",
 ];
 

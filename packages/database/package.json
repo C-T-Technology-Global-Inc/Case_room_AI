@@ -20,8 +20,8 @@
   },
   "dependencies": {
     "@ccr/types": "*",
-    "@prisma/adapter-pg": "7.10.0",
-    "@prisma/client": "7.10.0",
+    "@prisma/adapter-pg": "7.10.1",
+    "@prisma/client": "7.10.1",
     "dotenv": "^17.2.3",
     "pg": "^8.23.0"
   },
@@ -29,7 +29,7 @@
     "@ccr/ai": "*",
     "@ccr/config": "*",
     "@types/pg": "^8.23.1",
-    "prisma": "7.10.0",
+    "prisma": "7.10.1",
     "tsx": "^4.23.15"
   }
 }

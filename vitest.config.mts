@@ -10,7 +10,7 @@ export default defineConfig({
     },
   },
   test: {
-    include: ["packages/*/src/**/*.test.ts", "apps/web/src/**/*.test.ts"],
+    include: ["packages/*/src/**/*.test.ts", "packages/database/prisma/**/*.test.ts", "apps/web/src/**/*.test.ts", "scripts/**/*.test.ts"],
     // Database tests run separately: `npm run test:integration` (vitest.integration.config.mts).
     exclude: ["**/node_modules/**", "**/*.integration.test.ts"],
     environment: "node",

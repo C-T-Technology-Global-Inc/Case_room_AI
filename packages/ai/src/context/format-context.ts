@@ -220,5 +220,5 @@ function formatDiscussion(ctx: CaseContext, registry: SourceRegistry): string {
       message.type === "AI" ? "AI assistant" : message.type === "SYSTEM" ? "System" : `${message.author}${message.authorSpecialty ? ` (${message.authorSpecialty})` : ""}`;
     return `[${entry.key}] ${message.createdAt.slice(0, 16).replace("T", " ")} ${safe(who)}: ${safe(message.content)}`;
   });
-  return `<recent_discussion>\nRECENT DISCUSSION (oldest first; cite as M# only for statements made by the team):\n${lines.join("\n")}\n</recent_discussion>`;
+  return `<recent_discussion>\nRECENT DISCUSSION (oldest first; cite as M# only for statements made by the team, never for questions to the assistant or its earlier answers):\n${lines.join("\n")}\n</recent_discussion>`;
 }

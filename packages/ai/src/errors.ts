@@ -1,6 +1,13 @@
+import type { ResponseBilling } from "./providers/llm-client";
+
 /** Base class for all AI-layer errors. `userMessage` is safe to show in the UI. */
 export class AIError extends Error {
   readonly userMessage: string;
+  /**
+   * Set when the provider completed the request but its output was rejected
+   * (refusal, truncation, invalid structure): the tokens were still billed.
+   */
+  billing?: ResponseBilling;
   constructor(message: string, userMessage?: string, options?: { cause?: unknown }) {
     super(message, options);
     this.name = "AIError";

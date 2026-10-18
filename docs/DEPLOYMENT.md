@@ -12,7 +12,7 @@ The [Dockerfile](../Dockerfile) builds three targets from the monorepo root:
 |---|---|---|
 | `runner` (default) | `docker build -t case-room .` | The web app: Next.js standalone server, non-root user, `HEALTHCHECK` on `/api/health`, port 3000. |
 | `migrate` | `docker build --target migrate -t case-room-migrate .` | Applies database migrations (`prisma migrate deploy`) and exits. Run it as a release step before starting a new web version. |
-| `seed` | `docker build --target seed -t case-room-seed .` | Loads the synthetic demo data. **Erases the whole database first.** Local demos only. |
+| `seed` | `docker build --target seed -t case-room-seed .` | Loads the synthetic demo data. **Erases the whole database first.** Local demos and the synthetic online demo only. |
 
 CI builds all three on every pull request and runs [scripts/smoke-container.sh](../scripts/smoke-container.sh) against the web container (health, readiness, sign-in, database pages, upload, background processing, download, non-root user, no secrets in the image).
 
@@ -26,13 +26,15 @@ docker compose --profile demo run --rm seed       # synthetic demo data (erases 
 
 Sign in with a demo account from the README (password `demo1234`). Uploaded originals are kept in the `storage-data` volume.
 
+To put the synthetic demo online (one server with HTTPS and a shared site password, database on Supabase), follow [DEPLOY_DEMO.md](DEPLOY_DEMO.md).
+
 ## Configuration
 
 Set these in the container environment. Never bake them into an image.
 
 | Variable | Required | Notes |
 |---|---|---|
-| `DATABASE_URL` | yes | PostgreSQL 16. Must allow a **session** connection: the app keeps one `LISTEN` connection per process for realtime. A transaction-mode pooler in front breaks cross-process realtime (each process then only sees its own events). |
+| `DATABASE_URL` | yes | PostgreSQL 16. Must allow a **session** connection: the app keeps one `LISTEN` connection per process for realtime. A transaction-mode pooler in front breaks cross-process realtime (each process then only sees its own events). For a hosted database, `?sslmode=verify-full&sslrootcert=<CA file>` encrypts and verifies the server; the `migrate` image converts these options to Prisma's form (`prisma/migration-url.ts`), because Prisma ignores `verify-full`. |
 | `AUTH_SECRET` | yes | Long random string (`openssl rand -base64 32`). Readiness fails without it. Same value on every replica. |
 | `APP_URL`, `AUTH_URL` | yes | Public HTTPS URL of the app (Auth.js, and every link sent by email). Email links are never built from the request's `Host` header, so without `APP_URL` no account email is sent. |
 | `SMTP_URL`, `EMAIL_FROM` | recommended | Any SMTP service (Amazon SES, Resend, Postmark, Mailgun, a hospital mail server): `smtps://user:password@host:465` or `smtp://…:587`. Needed for public signup (the address is confirmed before anything is created), "forgot password", password-change notices and emailed invitations. Without it, signup and password reset are unavailable and admins share invitation links by hand. `EMAIL_FROM` must be an address the service may send from. |
@@ -50,7 +52,7 @@ All abuse limits and AI budgets are documented in `.env.example`.
 ## Release process
 
 1. Build the images from one commit; use the same image for every replica.
-2. Run the `migrate` image against the database. Never run `seed`, `setup` or `db:reset` on a shared deployment.
+2. Run the `migrate` image against the database. Never run `seed`, `setup` or `db:reset` on a deployment that holds anything but the synthetic demo data.
 3. Start or roll the web containers. Route traffic only when `GET /api/ready` returns 200.
 
 Rolling back to an older image is only safe if no migration since that version removed or moved something the old code uses (for example, `20261002090000_identities` moved passwords from `User` to `Identity`). Rolling back a migration is a manual database operation, done with a backup in hand.
@@ -109,6 +111,13 @@ Run **one web replica** for now. A second replica works for realtime (PostgreSQL
 - local file storage is per container, so you must use S3 storage.
 
 AI daily budgets, organization membership limits and all clinical workflows are enforced in the database and are safe across replicas. Budget the database connections: each process uses its Prisma pool, one `LISTEN` connection, and one short-lived connection while a readiness probe runs (concurrent probes in a process share it).
+
+## Security updates
+
+- **Next.js and React:** keep the latest patched release of the current minor line. As of 2026-10-17 the project runs **Next.js 16.4.2** and **React 19.3.1**. The out-of-band release of 2026-10-14 (Next.js 16.4.1) fixed two Critical issues (remote code execution through `use cache` functions returning typed arrays, and through SVG image optimization via an upstream image library) and one High issue (CPU or memory exhaustion through crafted Server Function requests). React 19.3.1 carries the matching React Server Components fix, and the image fix needs `sharp` 0.35.5 or later (installed). Check [the Next.js blog](https://nextjs.org/blog) for new advisories before each deployment that others can reach.
+- **Prisma:** 7.10.1 updates `mysql2` and `deepmerge-ts`, which `npm audit` flagged through the Prisma CLI in 7.10.0. Neither was part of the web runtime: the standalone output contains `@prisma/client` and `@prisma/adapter-pg` only, and the CLI runs only in the `migrate` release step.
+- **Lint tooling:** `npm audit` still reports `braces` (stack exhaustion on deeply nested glob patterns), reached through `eslint-config-next` → `@next/eslint-plugin-next` → `fast-glob` → `micromatch`. It is a development dependency that only reads this repository's own patterns and is not in the runtime output. No fixed `braces` release exists yet; the fix npm suggests (downgrading `eslint-config-next` to 14) is not acceptable. Revisit when an upstream release appears. Do not run `npm audit fix --force`.
+- Dependabot opens weekly update pull requests; merge security updates promptly, after CI passes.
 
 ## Backups
 

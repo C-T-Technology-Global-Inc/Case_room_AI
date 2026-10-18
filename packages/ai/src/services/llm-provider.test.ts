@@ -37,7 +37,7 @@ describe("LLMCaseAIProvider source grounding", () => {
     expect(output.sources[0]?.verified).toBe(true);
     expect(output.answer).toBe("Pathology confirms adenocarcinoma [1]. A prior MRI showed no disease.");
     expect(output.droppedCitations).toBe(2);
-    expect(output.limitations).toMatch(/2 citations that did not match a case record were removed/);
+    expect(output.limitations).toMatch(/2 citations that did not point to evidence in the case record were removed/);
   });
 
   it("downgrades confidence when no citation can be verified", async () => {
