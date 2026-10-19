@@ -6,9 +6,9 @@ What the demo is:
 
 - **Synthetic data only.** It reloads the demo patients every night and erases anything visitors added.
 - **Behind a shared password** (asked by the browser before the app's own sign-in), so strangers cannot use it or upload files. You give the password to the people you invite.
-- **Offline demo AI** (no API key, no cost). The demo accounts are listed on the sign-in page. Public signup is off.
+- **Offline demo AI** by default (no API key, no cost); live AI is optional, with daily caps (see [Live AI](#live-ai-optional)). The demo accounts are listed on the sign-in page. Public signup is off.
 
-> **Status:** these deployment files have not yet been run on a real server or Supabase project (the app itself is tested; the Compose file, the proxy configuration and the database TLS settings are not). Expect to check the logs on the first start (step 4).
+> **Status:** run end to end on 2026-10-19 on a Google Cloud e2-medium (Ubuntu 24.04, x86) with a Supabase session pooler: migrations and the app verified the database certificate, Caddy obtained its certificate, and a browser check passed (site password, sign-in, realtime between two users, an @AI answer). Other providers should behave the same but were not tried.
 
 Files: [`deploy/docker-compose.yml`](../deploy/docker-compose.yml), [`deploy/Caddyfile`](../deploy/Caddyfile), [`deploy/.env.example`](../deploy/.env.example), [`deploy/reset-demo.sh`](../deploy/reset-demo.sh).
 
@@ -32,11 +32,15 @@ A free Supabase project can be paused after a week without activity; the nightly
 
 ## 2. Server and domain
 
-1. Rent a VPS with **Ubuntu 24.04 LTS**, **2 vCPU and 4 GB RAM** (building the app needs the memory), about 40 GB disk. Any provider works, for example DigitalOcean or Vultr (region Singapore), or a Vietnamese provider. Add your SSH key when creating it.
+1. Rent a VPS with **Ubuntu 24.04 LTS**, **2 vCPU and 4 GB RAM** (building the app needs the memory), at least 30 GB disk, in the same region as the database. Any provider works, for example Google Cloud, DigitalOcean or Vultr, or a Vietnamese provider. Add your SSH key when creating it.
+   - **Google Cloud:** tick *Allow HTTP traffic* and *Allow HTTPS traffic*, and promote the external IP to a static one (*VPC network → IP addresses*), or it can change when the machine restarts. The SSH user is the name at the end of the key you pasted, with `sudo`.
 2. Point a domain or subdomain (for example `demo.your-company.com`) at the server: a DNS **A record** to its IPv4 address. Wait until `ping demo.your-company.com` shows that address.
-3. Sign in (`ssh root@SERVER_IP`), then:
+3. Sign in (`ssh root@SERVER_IP`; prefix the commands with `sudo` as a non-root user), then:
 
 ```bash
+# Minimal images can lack these
+apt-get update && apt-get install -y git cron ufw
+
 # Firewall: SSH and web only (the database is on Supabase, the app is reached through Caddy)
 ufw allow OpenSSH && ufw allow 80 && ufw allow 443 && ufw --force enable
 
@@ -81,7 +85,7 @@ docker compose logs caddy      # certificate problems: check the DNS record and 
 
 - `self-signed certificate in certificate chain` or `unable to verify`: the file in `deploy/certs/` is not Supabase's certificate, or the path in the URL is wrong.
 - `P1011 ... TLS` from migrate: the same certificate problem, seen by Prisma.
-- `P1011 ... The certificate was not trusted` when running Prisma **on a Mac** against Supabase: macOS rejects Supabase's pooler certificate (valid for five years, no extended key usage) under Apple's own rules, while OpenSSL, which the app and the Linux containers use, accepts it. Run migrations from the server as described here, not from a Mac.
+- `P1011 ... The certificate was not trusted` when running Prisma **on a Mac** against Supabase: macOS rejects Supabase's pooler certificate (valid for five years, no extended key usage) under Apple's own rules, while OpenSSL, which the app and the Linux containers use, accepts it. Run migrations from the server as described here, not from a Mac; on the Linux server they verify the certificate normally.
 - `ENETUNREACH` or a timeout to `db.*.supabase.co`: that is the IPv6-only direct connection; use the session pooler string.
 
 ## 5. Nightly reset
@@ -89,7 +93,7 @@ docker compose logs caddy      # certificate problems: check the DNS record and 
 ```bash
 crontab -e
 # 03:00 Vietnam time (20:00 UTC): reload the demo data
-0 20 * * * /opt/case-room/deploy/reset-demo.sh >> /var/log/case-room-reset.log 2>&1
+0 20 * * * /opt/case-room/deploy/reset-demo.sh >> $HOME/case-room-reset.log 2>&1
 ```
 
 ## 6. Updates
@@ -101,8 +105,25 @@ cd deploy && docker compose up -d --build   # new migrations run before the new 
 
 Before each update that others will reach, check for Next.js security releases ([DEPLOYMENT.md](DEPLOYMENT.md#security-updates)); the project must be on the latest patched release.
 
+## Live AI (optional)
+
+The demo uses the offline engine unless `deploy/.env` turns on a provider. With live AI, **everyone who has the site password spends on your key**, so:
+
+1. In the [Anthropic console](https://console.anthropic.com), set a **monthly spending limit** first: it is the hard ceiling.
+2. Check the output on your own computer first (`npm run ai:live-check`, see [CONTRIBUTING.md](../CONTRIBUTING.md)).
+3. Add to `deploy/.env`:
+
+   ```bash
+   AI_PROVIDER="anthropic"
+   ANTHROPIC_API_KEY="sk-ant-..."
+   ```
+
+4. `docker compose up -d` restarts the app with it.
+
+The app also caps usage, counted in the database: by default 40 AI requests a day for the whole demo, 4 a minute per user and 2 at a time (`AI_DAILY_REQUESTS_TOTAL`, `AI_REQUESTS_PER_USER_PER_MINUTE`, `AI_CONCURRENT_RUNS_PER_ORG` in `deploy/docker-compose.yml`; override them in `deploy/.env`). Uploading a document also runs AI. The data sent to the provider is the synthetic demo data. To go back to the offline engine, set `AI_PROVIDER="demo"` and run `docker compose up -d`.
+
 ## Rules for this demo
 
 - **Never enter real patient information.** The data is erased nightly and the demo accounts' password is public.
 - Share the site password only with the people you invite; change it (new hash in `.env`, then `docker compose up -d caddy`) when you want to cut access.
-- To show live AI instead of the offline engine, use a separate deployment with an Anthropic key and a spending limit, after the live AI check in [CONTRIBUTING.md](../CONTRIBUTING.md); do not add a paid key to this shared demo.
+- With live AI, give the site password only to people you are happy to pay for, and keep the spending limit in place.

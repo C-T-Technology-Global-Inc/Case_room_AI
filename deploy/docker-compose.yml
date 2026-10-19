@@ -6,6 +6,7 @@
 #
 # Synthetic data only. The whole site is behind a shared password (Caddy), the
 # demo accounts are listed on the sign-in page, and public signup is off.
+# AI runs offline unless deploy/.env sets AI_PROVIDER and a key.
 
 name: case-room-demo
 
@@ -16,8 +17,17 @@ x-app-environment: &app-environment
   APP_URL: https://${DEMO_DOMAIN:?Set DEMO_DOMAIN in deploy/.env}
   AUTH_URL: https://${DEMO_DOMAIN}
   SOURCE_CODE_URL: ${SOURCE_CODE_URL:-}
-  # Offline demo AI: no provider key, no API cost.
-  AI_PROVIDER: demo
+  # Offline demo AI unless deploy/.env turns on a provider (live AI costs money:
+  # see "Live AI" in docs/DEPLOY_DEMO.md).
+  AI_PROVIDER: ${AI_PROVIDER:-demo}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-5-5}
+  ANTHROPIC_EFFORT: ${ANTHROPIC_EFFORT:-medium}
+  # Caps for a shared demo, counted in the database (0 disables a cap).
+  AI_DAILY_REQUESTS_TOTAL: ${AI_DAILY_REQUESTS_TOTAL:-40}
+  AI_DAILY_REQUESTS_PER_ORG: ${AI_DAILY_REQUESTS_PER_ORG:-40}
+  AI_REQUESTS_PER_USER_PER_MINUTE: ${AI_REQUESTS_PER_USER_PER_MINUTE:-4}
+  AI_CONCURRENT_RUNS_PER_ORG: ${AI_CONCURRENT_RUNS_PER_ORG:-2}
   DEMO_LOGIN: "true"
   PUBLIC_SIGNUP: "false"
   EMAIL_TRANSPORT: ${EMAIL_TRANSPORT:-none}

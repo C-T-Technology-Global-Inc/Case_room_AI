@@ -20,6 +20,7 @@ packages/database/src/generated/
 
 # private review notes (security findings and attack scenarios): local only
 CODEX_*.md
+codex-reviews/
 
 # end-to-end test output
 test-results/
