@@ -4,7 +4,6 @@ import { ActiveOrganizationNotice } from "@/components/layout/organization-switc
 import { SafetyBanner } from "@/components/layout/safety-banner";
 import { requireUser } from "@/server/auth/session";
 import { accessibleCaseWhere } from "@/server/authz/case-access";
-import { getAIProviderInfo } from "@/server/services/ai";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
@@ -14,7 +13,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       where: { userId: user.id, status: "PENDING", decision: { status: { in: ["PROPOSED", "UNDER_REVIEW"] } } },
     }),
   ]);
-  const ai = getAIProviderInfo();
 
   return (
     <div className="flex h-dvh overflow-hidden bg-background">
@@ -23,7 +21,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         organization={{ id: user.organizationId, name: user.organizationName }}
         organizations={user.organizations}
         counts={{ openTasks, pendingApprovals }}
-        ai={{ label: ai.label, model: ai.model, isDemo: ai.isDemo }}
       />
       <div className="flex min-w-0 flex-1 flex-col">
         <ActiveOrganizationNotice organizationId={user.organizationId} />

@@ -33,7 +33,6 @@ interface SidebarProps {
   organization: { id: string; name: string };
   organizations: OrganizationOption[];
   counts: { openTasks: number; pendingApprovals: number };
-  ai: { label: string; model: string; isDemo: boolean };
 }
 
 const NAV = [
@@ -44,7 +43,7 @@ const NAV = [
   { href: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
-export function AppSidebar({ user, organization, organizations, counts, ai }: SidebarProps) {
+export function AppSidebar({ user, organization, organizations, counts }: SidebarProps) {
   const pathname = usePathname();
 
   return (
@@ -90,10 +89,6 @@ export function AppSidebar({ user, organization, organizations, counts, ai }: Si
           <div className="flex items-center gap-1.5 text-[11px] font-medium text-foreground">
             <SparklesIcon className="size-3.5 text-ai" />
             AI assistant
-          </div>
-          <div className="mt-0.5 truncate text-[11px] text-muted-foreground" title={`${ai.label} · ${ai.model}`}>
-            {ai.label}
-            {!ai.isDemo && <span className="text-muted-foreground/70"> · {ai.model}</span>}
           </div>
         </div>
 
