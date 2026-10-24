@@ -3,11 +3,21 @@
 # It replaces any X-Forwarded-For sent by clients with the real client address,
 # which the app's per-address limits rely on.
 
-{$DEMO_DOMAIN} {
-	# Shared password for the whole demo: strangers cannot reach it, or upload files.
+# Shared password for the whole demo: strangers cannot reach it, or upload files.
+(access-password) {
 	basic_auth {
 		{$DEMO_USER} {$DEMO_PASSWORD_HASH}
 	}
+}
+
+# DEMO_ACCESS=public in deploy/.env: no site password. Anyone can then sign in
+# with the listed demo accounts (see the warning in docs/DEPLOY_DEMO.md).
+(access-public) {
+}
+
+{$DEMO_DOMAIN} {
+	# An unknown DEMO_ACCESS value names no snippet, so Caddy refuses to start.
+	import access-{$DEMO_ACCESS:password}
 
 	# Document uploads are limited to 10 MB by the app.
 	request_body {

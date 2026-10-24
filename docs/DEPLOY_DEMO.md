@@ -122,8 +122,19 @@ The demo uses the offline engine unless `deploy/.env` turns on a provider. With 
 
 The app also caps usage, counted in the database: by default 40 AI requests a day for the whole demo, 4 a minute per user and 2 at a time (`AI_DAILY_REQUESTS_TOTAL`, `AI_REQUESTS_PER_USER_PER_MINUTE`, `AI_CONCURRENT_RUNS_PER_ORG` in `deploy/docker-compose.yml`; override them in `deploy/.env`). Uploading a document also runs AI. The data sent to the provider is the synthetic demo data. To go back to the offline engine, set `AI_PROVIDER="demo"` and run `docker compose up -d`.
 
+## Public access (optional)
+
+`DEMO_ACCESS="public"` in `deploy/.env`, then `docker compose up -d`, removes the site password. Know what that allows before you choose it: the sign-in page signs anyone in with one click as any demo account, **including the organization admin**, so a visitor can
+
+- change a demo account's password (the current one, `demo1234`, is public) and lock everyone else out of it until the next reset;
+- deactivate members or change their roles;
+- use up the day's AI allowance;
+- post content or upload files that every later visitor sees.
+
+The nightly reset repairs all of it, but only at night. Switch back with `DEMO_ACCESS="password"`.
+
 ## Rules for this demo
 
 - **Never enter real patient information.** The data is erased nightly and the demo accounts' password is public.
-- Share the site password only with the people you invite; change it (new hash in `.env`, then `docker compose up -d caddy`) when you want to cut access.
+- Share the site password only with the people you invite; change it (new hash in `.env`, then `docker compose up -d caddy`) when you want to cut access. Without it (public access), watch the demo after sharing the link widely.
 - With live AI, give the site password only to people you are happy to pay for, and keep the spending limit in place.
