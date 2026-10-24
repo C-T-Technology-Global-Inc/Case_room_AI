@@ -70,6 +70,8 @@ services:
       - "443:443/udp"
     environment:
       DEMO_DOMAIN: ${DEMO_DOMAIN}
+      # "password" (default) or "public": see docs/DEPLOY_DEMO.md before choosing public.
+      DEMO_ACCESS: ${DEMO_ACCESS:-password}
       DEMO_USER: ${DEMO_USER:?Set DEMO_USER in deploy/.env}
       DEMO_PASSWORD_HASH: ${DEMO_PASSWORD_HASH:?Set DEMO_PASSWORD_HASH in deploy/.env}
     volumes:
